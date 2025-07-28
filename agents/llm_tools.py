@@ -10,9 +10,11 @@ class LLMIntentAgent:
     def __init__(self):
         api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
         if not api_key:
-            raise ValueError("OPENAI_API_KEY or DEEPSEEK_API_KEY must be set.")
-        self.client = OpenAI(api_key=api_key)
+            raise ValueError("API KEY not set in environment variables")
+        self.client = OpenAI(api_key=api_key)  # no proxies argument here
         self.model = "gpt-4o-mini"
+
+    # keep analyze_intent method as above with docstring
 
     @tool("analyze_intent")
     def analyze_intent(self, user_text: str) -> dict:
