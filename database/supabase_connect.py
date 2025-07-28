@@ -1,11 +1,11 @@
 import os
-from supabase import create_client
-from dotenv import load_dotenv
-load_dotenv()
-class SupabaseConnection:
-    def __init__(self):
-        self.url = os.getenv("SUPABASE_URL")
-        self.key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        self.client = create_client(self.url, self.key)
-supabase_connection = SupabaseConnection()
-supabase = supabase_connection.client
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+DB_URL = os.getenv("SUPABASE_DB_URL")
+if not DB_URL:
+    raise ValueError("SUPABASE_DB_URL not set in env.")
+
+engine = create_engine(DB_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
