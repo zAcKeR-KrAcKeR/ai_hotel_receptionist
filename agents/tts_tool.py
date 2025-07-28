@@ -15,13 +15,13 @@ class AzureTTSTool:
         self.speech_config = speechsdk.SpeechConfig(
             subscription=self.speech_key, region=self.speech_region
         )
-        # Choose an Indian/English natural voice
         self.speech_config.speech_synthesis_voice_name = "en-IN-NeerjaNeural"
 
     @tool("synthesize_speech")
     def synthesize_speech(self, text: str) -> str:
         """
-        Synthesize the given text to speech audio using Azure TTS, writes to WAV file, and returns path.
+        Synthesize the given text to speech (TTS) audio using Azure TTS;
+        writes to a temporary WAV file and returns the file path.
         """
         try:
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
