@@ -10,22 +10,16 @@ class AzureSTTTool:
         self.speech_key = os.getenv("AZURE_SPEECH_KEY")
         self.speech_region = os.getenv("AZURE_SPEECH_REGION")
         if not self.speech_key or not self.speech_region:
-            raise ValueError("Azure Speech key/region missing in environment variables")
-        self.speech_config = speechsdk.SpeechConfig(
-            subscription=self.speech_key, region=self.speech_region
-        )
+            raise ValueError("Azure Speech credentials not set")
+        self.speech_config = speechsdk.SpeechConfig(subscription=self.speech_key, region=self.speech_region)
         self.speech_config.speech_recognition_language = "en-IN"
 
     @tool("transcribe_audio")
     def transcribe_audio(self, audio_file_path: str) -> str:
-        """
-        Transcribe the given audio file to text using Azure Cognitive Services.
-        """
+        """Transcribe input audio file to text using Azure Cognitive Services."""
         try:
             audio_config = speechsdk.AudioConfig(filename=audio_file_path)
-            recognizer = speechsdk.SpeechRecognizer(
-                speech_config=self.speech_config, audio_config=audio_config
-            )
+            recognizer = speechsdk.SpeechRecognizer(self.speech_config, audio_config)
             result = recognizer.recognize_once()
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
                 logger.info(f"STT success: {result.text}")
