@@ -18,6 +18,9 @@ class AzureSTTTool:
 
     @tool("transcribe_audio")
     def transcribe_audio(self, audio_file_path: str) -> str:
+        """
+        Transcribe the given audio file to text using Azure Cognitive Services.
+        """
         try:
             audio_config = speechsdk.AudioConfig(filename=audio_file_path)
             recognizer = speechsdk.SpeechRecognizer(
