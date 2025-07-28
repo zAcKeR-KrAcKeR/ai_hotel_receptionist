@@ -4,7 +4,7 @@ python-multipart==0.0.6
 requests==2.31.0
 python-dotenv==1.0.0
 #supabase==2.0.0
-openai>=0.27.0,<0.29
+openai>=1.30.0
 azure-cognitiveservices-speech==1.34.0
 azure-storage-blob==12.19.0
 langchain==0.0.340
@@ -13,4 +13,3 @@ autogen==0.9.7
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
 pydantic==2.6.4
-httpx>=0.23,<0.25
