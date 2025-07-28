@@ -15,6 +15,7 @@ class AzureTTSTool:
         self.speech_config = speechsdk.SpeechConfig(
             subscription=self.speech_key, region=self.speech_region
         )
+        # Choose an Indian/English natural voice
         self.speech_config.speech_synthesis_voice_name = "en-IN-NeerjaNeural"
 
     @tool("synthesize_speech")
@@ -33,5 +34,3 @@ class AzureTTSTool:
             return ""
 
 tts_tool = AzureTTSTool()
-
-
