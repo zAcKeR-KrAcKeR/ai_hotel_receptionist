@@ -17,7 +17,7 @@ class LLMIntentAgent:
     @tool("analyze_intent")
     def analyze_intent(self, user_text: str) -> dict:
         """
-        Analyze a hotel guest utterance, extracting booking/food/room intent and entities as JSON.
+        Analyze a hotel guest utterance: extract booking, food, or room inquiry intent and relevant entities as JSON.
         """
         prompt = (
             "Analyze this hotel guest utterance. "
