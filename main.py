@@ -37,13 +37,13 @@ async def kookoo_webhook(request: Request):
             reply = """<Response>Sorry, there was an error. Please call back later.</Response>"""
         else:
             reply = f"""<Response><PlayAudio>{resp_audio_url}</PlayAudio></Response>"""
-            logger.info(f"Sending PlayAudio for caller '{caller}': {resp_audio_url}")
+            logger.info(f"Returning PlayAudio URL for caller '{caller}'")
 
         return Response(content=reply, media_type="application/xml")
 
     elif event == "Disconnect":
-        logger.info(f"Call disconnected from caller '{caller}'")
-        return Response(content="", media_type="application/xml")
+        logger.info(f"Call disconnected for caller '{caller}'")
+        return Response(content="<Response></Response>", media_type="application/xml")
 
     else:
         reply = """<Response>Thank you for calling. Goodbye!</Response>"""
