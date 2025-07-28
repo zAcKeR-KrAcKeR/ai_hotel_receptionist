@@ -21,19 +21,15 @@ class CallOrchestrator:
         try:
             logger.info(f"Processing call for user {user_phone}")
 
-            # Download recorded audio
             inp_file = self.audio_handler.download_audio_from_url(audio_url)
-            logger.info(f"Downloaded audio file for user {user_phone} from {audio_url}")
+            logger.info(f"Downloaded audio file from {audio_url}")
 
-            # Speech to Text
             transcript = stt_tool.transcribe_audio(inp_file)
-            logger.info(f"STT transcription for user {user_phone}: {transcript}")
+            logger.info(f"Transcribed text: {transcript}")
 
-            # Intent Extraction
             intent_result = llm_tool.analyze_intent(transcript)
-            logger.debug(f"Intent extraction result for {user_phone}: {intent_result}")
+            logger.debug(f"Intent extraction: {intent_result}")
 
-            # Agentic chat via AutoGen + LangChain
             msg = (
                 f"User said: {transcript}\n"
                 f"Entities: {intent_result.get('entities')}\n"
@@ -42,21 +38,16 @@ class CallOrchestrator:
             chat_history = [{"role": "user", "content": msg}]
             result = manager.run(chat_history)
             response_text = result[-1]["content"] if isinstance(result, list) else str(result)
-            logger.info(f"Generated response for user {user_phone}: {response_text}")
+            logger.info(f"Generated response: {response_text}")
 
-            # Text-to-Speech synthesis
             out_file = tts_tool.synthesize_speech(response_text)
-
-            # Upload audio to Azure Blob Storage
             blob_name = f"response_{user_phone}_{int(time.time())}.wav"
             audio_url = blob_storage.upload_audio_file(out_file, blob_name)
             if not audio_url:
-                logger.error(f"Failed to upload audio blob for user {user_phone}")
+                logger.error("Failed to upload audio file to blob storage")
                 return None
 
-            # Log conversation to DB
             self.db.log_conversation(user_phone, transcript, response_text)
-
             return audio_url
 
         except Exception as e:
