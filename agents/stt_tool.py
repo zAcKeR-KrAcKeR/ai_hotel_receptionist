@@ -35,4 +35,3 @@ class AzureSTTTool:
             return ""
 
 stt_tool = AzureSTTTool()
-
