@@ -20,6 +20,9 @@ class AzureTTSTool:
 
     @tool("synthesize_speech")
     def synthesize_speech(self, text: str) -> str:
+        """
+        Synthesize the given text to speech audio using Azure TTS, writes to WAV file, and returns path.
+        """
         try:
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
             audio_config = speechsdk.AudioConfig(filename=temp_file.name)
