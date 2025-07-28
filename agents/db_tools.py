@@ -15,7 +15,7 @@ def get_food_menu_and_voice() -> str:
 @tool("process_booking")
 def process_booking_tool(entities: dict, user_phone: str) -> str:
     """
-    Book a room for the user or list available rooms. Checks entities, requests missing info, books if possible.
+    Book a room for the user or list available rooms. Checks entities, requests missing info, and books if possible.
     """
     from datetime import datetime
     room_type = entities.get("room_type")
@@ -28,12 +28,12 @@ def process_booking_tool(entities: dict, user_phone: str) -> str:
     if guest_name and check_in and check_out:
         room = avail[0]
         nights = (datetime.strptime(check_out, "%Y-%m-%d") - datetime.strptime(check_in, "%Y-%m-%d")).days
-        total = room["price"]*nights
+        total = room["price"] * nights
         if db.book_room(room["id"], user_phone, guest_name, check_in, check_out, total):
             return f"Room {room['room_number']} booked for {guest_name} from {check_in} to {check_out}. Total: ₹{total}."
         else:
             return "Booking failed. Try again."
-    missing=[]
+    missing = []
     if not guest_name: missing.append("your name")
     if not check_in: missing.append("check-in date")
     if not check_out: missing.append("check-out date")
@@ -45,8 +45,8 @@ def process_food_order_tool(entities: dict, user_phone: str) -> str:
     """
     Place a food order for the user after extracting food_items and quantity from the intent.
     """
-    items = entities.get("food_items",[])
-    quantity = entities.get("quantity",1)
+    items = entities.get("food_items", [])
+    quantity = entities.get("quantity", 1)
     bookings = db.get_user_bookings(user_phone)
     if not bookings:
         return "No booking found. Please provide your room number."
@@ -58,5 +58,5 @@ def process_food_order_tool(entities: dict, user_phone: str) -> str:
     for item in items:
         price = db.get_menu_item_price(item)
         total += price * quantity
-        db.place_food_order(booking_id, room_number, item, quantity, price*quantity)
+        db.place_food_order(booking_id, room_number, item, quantity, price * quantity)
     return f"Ordered " + ", ".join([f"{quantity}x {i}" for i in items]) + f" for your room. Total: ₹{total}. Arriving soon."
