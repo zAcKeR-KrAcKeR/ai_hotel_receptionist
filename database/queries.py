@@ -1,6 +1,6 @@
-from sqlalchemy.orm import Session
 from database.supabase_connect import SessionLocal
 from database.models import Room, Booking, FoodMenu, Order, CallLog
+from sqlalchemy.orm import Session
 
 class HotelDatabase:
     def __init__(self):
@@ -13,29 +13,28 @@ class HotelDatabase:
                 query = query.filter(Room.room_type == room_type)
             return [r.__dict__ for r in query.all()]
 
-    def book_room(self, room_id, user_phone, user_name, checkin, checkout, total):
+    def book_room(self, room_id, user_phone, user_name, check_in, check_out, total_amount):
         with self.db_session() as db:
             booking = Booking(
                 room_id=room_id,
                 user_phone=user_phone,
                 user_name=user_name,
-                check_in_date=checkin,
-                check_out_date=checkout,
-                total_amount=total,
+                check_in=check_in,
+                check_out=check_out,
+                total_amount=total_amount,
                 status='confirmed'
             )
             db.add(booking)
-            db.query(Room).filter(Room.id == room_id).update({'is_available': False})
+            db.query(Room).filter(Room.id == room_id).update({"is_available": False})
             db.commit()
             return True
 
     def get_user_bookings(self, user_phone):
         with self.db_session() as db:
             bookings = db.query(Booking).filter(Booking.user_phone == user_phone).all()
-            # Optionally join with rooms table or return as needed
             return [b.__dict__ for b in bookings]
 
-    def place_food_order(self, booking_id, room_number, food_item, quantity, price):
+    def place_order(self, booking_id, room_number, food_item, quantity, price):
         with self.db_session() as db:
             order = Order(
                 booking_id=booking_id,
@@ -64,7 +63,7 @@ class HotelDatabase:
             items = db.query(FoodMenu).all()
             return [dict(item_name=i.item_name, price=i.price) for i in items]
 
-    def get_menu_item_price(self, item_name):
+    def get_food_price(self, item_name):
         with self.db_session() as db:
             item = db.query(FoodMenu).filter(FoodMenu.item_name == item_name).first()
-            return float(item.price) if item else 100.0
+            return float(item.price) if item else 0.0
