@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 class AudioHandler:
     @staticmethod
     def download_audio_from_url(audio_url, output_path=None):
+        """
+        Downloads an audio file from a given URL to a local temp file.
+        Returns the local file path or None on error.
+        """
         try:
             if not output_path:
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
@@ -25,11 +29,10 @@ class AudioHandler:
 
     @staticmethod
     def cleanup_temp_file(filepath):
+        """Deletes a temporary file if it exists, logs result."""
         try:
             if filepath and os.path.exists(filepath):
                 os.unlink(filepath)
                 logger.info(f"Deleted temporary file {filepath}")
         except Exception as e:
             logger.warning(f"Could not delete temp file {filepath}: {e}")
-
-
