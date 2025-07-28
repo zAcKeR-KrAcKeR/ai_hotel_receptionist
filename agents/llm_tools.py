@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 class LLMIntentAgent:
     def __init__(self):
         self.client = OpenAI(
-            api_key=os.getenv("DEEPSEEK_API_KEY"), 
-            base_url=os.getenv("DEEPSEEK_BASE_URL","")
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url=os.getenv("DEEPSEEK_BASE_URL", "")
         )
         self.model = "deepseek-chat"
 
@@ -36,4 +36,3 @@ class LLMIntentAgent:
             return {"intent": "other", "entities": {}}
 
 llm_tool = LLMIntentAgent()
-
