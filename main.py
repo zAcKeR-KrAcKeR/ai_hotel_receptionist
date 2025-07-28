@@ -4,7 +4,6 @@ from orchestrator import orchestrator
 from dotenv import load_dotenv
 
 load_dotenv()
-
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
 
@@ -36,6 +35,7 @@ async def kookoo_webhook(request: Request):
             logger.error(f"Failed to generate audio URL for caller '{caller}'")
             reply = """<Response>Sorry, there was an error. Please call back later.</Response>"""
         else:
+            # Correct XML with <PlayAudio>
             reply = f"""<Response><PlayAudio>{resp_audio_url}</PlayAudio></Response>"""
             logger.info(f"Returning PlayAudio URL for caller '{caller}'")
 
