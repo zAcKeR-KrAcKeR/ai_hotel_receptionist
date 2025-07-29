@@ -1,3 +1,18 @@
+from fastapi import FastAPI, Request, Response
+import logging
+from orchestrator import orchestrator
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ✅ Define the FastAPI app first
+app = FastAPI()
+logger = logging.getLogger("uvicorn.error")
+
+@app.get("/")
+async def health_check():
+    return {"status": "OK", "service": "AI Receptionist"}
+
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
     is_post = request.method == "POST"
@@ -25,30 +40,25 @@ async def kookoo_webhook(request: Request):
         """
         return Response(content=xml_response.strip(), media_type="application/xml")
 
-    elif event in ["Record", "Hangup"]:  # Process audio on Hangup
+    elif event == "Record":
         if not recording_url:
-            logger.error(f"No audio URL passed in {event} event for caller '{caller}'")
+            logger.error(f"No audio URL passed in Record event for caller '{caller}'")
             return Response(
                 content="<Response><Say>Sorry, no audio was captured. Please speak after the beep next time.</Say></Response>",
                 media_type="application/xml",
             )
-        try:
-            resp_audio_url = orchestrator.process_call(recording_url, caller)
-        except Exception as e:
-            logger.exception(f"Error processing call for user {caller}: {str(e)}")
-            return Response(
-                content="<Response><Say>There was a problem processing your request. Please try again later.</Say></Response>",
-                media_type="application/xml"
-            )
+        
+        # Call orchestrator to process audio: download, transcribe, get response, synthesize speech, upload audio
+        resp_audio_url = orchestrator.process_call(recording_url, caller)
 
         if resp_audio_url:
             xml = f"<Response><PlayAudio>{resp_audio_url}</PlayAudio></Response>"
         else:
-            xml = "<Response><Say>Sorry, something went wrong.</Say></Response>"
+            xml = "<Response><Say>There was a problem processing your request. Please try again later.</Say></Response>"
 
         return Response(content=xml, media_type="application/xml")
 
-    elif event == "Disconnect":
+    elif event == "Hangup":
         logger.info(f"Call disconnected for caller '{caller}'")
         return Response(content="<Response></Response>", media_type="application/xml")
 
