@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Response, Form
+from fastapi import FastAPI, Request, Response
 import logging
 from orchestrator import orchestrator
 from dotenv import load_dotenv
@@ -13,18 +13,22 @@ async def health_check():
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
-    if request.method == "GET":
-        query = dict(request.query_params)
-        caller = query.get("cid")
-        event = query.get("event")
-    else:
-        form = await request.form()
-        caller = form.get("cid")
-        event = form.get("event")
+    # --- Key fix: support both GET (query param) and POST (form) for ALL values ---
+    is_post = request.method == "POST"
+    form = await request.form() if is_post else {}
+    params = request.query_params
+
+    def pick(key):
+        return form.get(key) if key in form else params.get(key)
+
+    caller = pick("cid")
+    event = pick("event")
+    recording_url = pick("data")
 
     logger.info(f"Received webhook event '{event}' from caller '{caller}'")
 
     if event == "NewCall":
+        # KooKoo expects <Say> and <Record> tags for welcome and recording!
         xml_response = """
         <Response>
             <Say>Welcome to Grand Hotel. How can I assist you today?</Say>
@@ -34,14 +38,17 @@ async def kookoo_webhook(request: Request):
             </Record>
         </Response>
         """
-        return Response(content=xml_response, media_type="application/xml")
+        return Response(content=xml_response.strip(), media_type="application/xml")
 
     elif event == "Record":
-        recording_url = form.get("data") if request.method == "POST" else query.get("data")
         if not recording_url:
-            return Response(content="<Response><Say>Sorry, no audio was captured.</Say></Response>", media_type="application/xml")
+            logger.error(f"No audio URL passed in Record event for caller '{caller}'")
+            return Response(
+                content="<Response><Say>Sorry, no audio was captured. Please speak after the beep next time.</Say></Response>",
+                media_type="application/xml",
+            )
 
-        # Process audio using your orchestrator
+        # Process audio using orchestrator (download, transcribe, respond, TTS, upload)
         resp_audio_url = orchestrator.process_call(recording_url, caller)
 
         if resp_audio_url:
@@ -56,4 +63,4 @@ async def kookoo_webhook(request: Request):
         return Response(content="<Response></Response>", media_type="application/xml")
 
     # Default fallback
-    return Response(content="<Response><Say>Thank you for calling.</Say></Response>", media_type="application/xml")
+    return Response(content="<Response><Say>Thank you for calling. Goodbye!</Say></Response>", media_type="application/xml")
