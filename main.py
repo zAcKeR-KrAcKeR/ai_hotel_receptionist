@@ -13,7 +13,7 @@ async def health_check():
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
-    # Unified GET/POST param extraction
+    # Support both GET (query params) and POST (form data)
     is_post = request.method == "POST"
     form = await request.form() if is_post else {}
     params = request.query_params
@@ -46,8 +46,7 @@ async def kookoo_webhook(request: Request):
                 content="<Response><Say>Sorry, no audio was captured. Please speak after the beep next time.</Say></Response>",
                 media_type="application/xml",
             )
-
-        # Process audio using orchestrator (download, transcribe, respond, TTS, upload)
+        # Call orchestrator to process audio: download, transcribe, get response, synthesize speech, upload audio
         resp_audio_url = orchestrator.process_call(recording_url, caller)
 
         if resp_audio_url:
@@ -61,5 +60,5 @@ async def kookoo_webhook(request: Request):
         logger.info(f"Call disconnected for caller '{caller}'")
         return Response(content="<Response></Response>", media_type="application/xml")
 
-    # Default fallback
+    # Fallback response
     return Response(content="<Response><Say>Thank you for calling. Goodbye!</Say></Response>", media_type="application/xml")
