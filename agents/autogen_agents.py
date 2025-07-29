@@ -34,4 +34,4 @@ front_agent = AssistantAgent(
 agents = [front_agent, booking_agent, food_agent]
 
 groupchat = GroupChat(agents=agents, messages=[], max_round=6)
-manager = GroupChatManager("manager", groupchat=groupchat)
+manager = GroupChatManager(groupchat, name="manager")
