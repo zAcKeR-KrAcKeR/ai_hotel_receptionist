@@ -13,7 +13,7 @@ async def health_check():
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
-    # --- Key fix: support both GET (query param) and POST (form) for ALL values ---
+    # Unified GET/POST param extraction
     is_post = request.method == "POST"
     form = await request.form() if is_post else {}
     params = request.query_params
@@ -28,7 +28,6 @@ async def kookoo_webhook(request: Request):
     logger.info(f"Received webhook event '{event}' from caller '{caller}'")
 
     if event == "NewCall":
-        # KooKoo expects <Say> and <Record> tags for welcome and recording!
         xml_response = """
         <Response>
             <Say>Welcome to Grand Hotel. How can I assist you today?</Say>
