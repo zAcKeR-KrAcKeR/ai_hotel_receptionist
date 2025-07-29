@@ -13,7 +13,6 @@ async def health_check():
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
-    # Support both GET (query params) and POST (form data)
     is_post = request.method == "POST"
     form = await request.form() if is_post else {}
     params = request.query_params
@@ -46,13 +45,19 @@ async def kookoo_webhook(request: Request):
                 content="<Response><Say>Sorry, no audio was captured. Please speak after the beep next time.</Say></Response>",
                 media_type="application/xml",
             )
-        # Call orchestrator to process audio: download, transcribe, get response, synthesize speech, upload audio
-        resp_audio_url = orchestrator.process_call(recording_url, caller)
+        try:
+            resp_audio_url = orchestrator.process_call(recording_url, caller)
+        except Exception as e:
+            logger.exception(f"Error processing call for user {caller}: {str(e)}")
+            return Response(
+                content="<Response><Say>There was a problem processing your request. Please try again later.</Say></Response>",
+                media_type="application/xml"
+            )
 
         if resp_audio_url:
             xml = f"<Response><PlayAudio>{resp_audio_url}</PlayAudio></Response>"
         else:
-            xml = "<Response><Say>There was a problem processing your request. Please try again later.</Say></Response>"
+            xml = "<Response><Say>Sorry, something went wrong.</Say></Response>"
 
         return Response(content=xml, media_type="application/xml")
 
@@ -60,5 +65,4 @@ async def kookoo_webhook(request: Request):
         logger.info(f"Call disconnected for caller '{caller}'")
         return Response(content="<Response></Response>", media_type="application/xml")
 
-    # Fallback response
     return Response(content="<Response><Say>Thank you for calling. Goodbye!</Say></Response>", media_type="application/xml")
