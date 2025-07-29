@@ -1,16 +1,3 @@
-from fastapi import FastAPI, Request, Response
-import logging
-from orchestrator import orchestrator
-from dotenv import load_dotenv
-
-load_dotenv()
-app = FastAPI()
-logger = logging.getLogger("uvicorn.error")
-
-@app.get("/")
-async def health_check():
-    return {"status": "OK", "service": "AI Receptionist"}
-
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
     is_post = request.method == "POST"
@@ -38,9 +25,9 @@ async def kookoo_webhook(request: Request):
         """
         return Response(content=xml_response.strip(), media_type="application/xml")
 
-    elif event == "Record":
+    elif event in ["Record", "Hangup"]:  # Process audio on Hangup
         if not recording_url:
-            logger.error(f"No audio URL passed in Record event for caller '{caller}'")
+            logger.error(f"No audio URL passed in {event} event for caller '{caller}'")
             return Response(
                 content="<Response><Say>Sorry, no audio was captured. Please speak after the beep next time.</Say></Response>",
                 media_type="application/xml",
