@@ -13,13 +13,11 @@ async def health_check():
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
-    # Unified GET/POST param extraction
     is_post = request.method == "POST"
     form = await request.form() if is_post else {}
     params = request.query_params
 
     def pick(key):
-        # prefer form value if present, otherwise fallback to query
         return form.get(key) if key in form else params.get(key)
 
     caller = pick("cid")
@@ -29,10 +27,9 @@ async def kookoo_webhook(request: Request):
     logger.info(f"Received webhook event '{event}' from caller '{caller}'")
 
     if event == "NewCall":
-        # Send compact, KooKoo-compliant, no-indentation XML
         xml_response = (
             "<Response>"
-            "<Say>Welcome to Grand Hotel. How can I assist you today?</Say>"
+            "<PlayText>Welcome to Grand Hotel. How can I assist you today?</PlayText>"
             "<Record>"
             "<MaxDuration>30</MaxDuration>"
             "<SilenceTimeout>5</SilenceTimeout>"
@@ -45,7 +42,7 @@ async def kookoo_webhook(request: Request):
         if not recording_url:
             logger.error(f"No audio URL passed in Record event for caller '{caller}'")
             return Response(
-                content="<Response><Say>Sorry, no audio was captured. Please speak after the beep next time.</Say></Response>",
+                content="<Response><PlayText>Sorry, no audio was captured. Please speak after the beep next time.</PlayText></Response>",
                 media_type="application/xml",
             )
         try:
@@ -53,14 +50,14 @@ async def kookoo_webhook(request: Request):
         except Exception as e:
             logger.exception(f"Error processing call for user {caller}: {str(e)}")
             return Response(
-                content="<Response><Say>There was a problem processing your request. Please try again later.</Say></Response>",
+                content="<Response><PlayText>There was a problem processing your request. Please try again later.</PlayText></Response>",
                 media_type="application/xml"
             )
 
         if resp_audio_url:
             xml = f"<Response><PlayAudio>{resp_audio_url}</PlayAudio></Response>"
         else:
-            xml = "<Response><Say>Sorry, something went wrong.</Say></Response>"
+            xml = "<Response><PlayText>Sorry, something went wrong.</PlayText></Response>"
 
         return Response(content=xml, media_type="application/xml")
 
@@ -68,5 +65,4 @@ async def kookoo_webhook(request: Request):
         logger.info(f"Call disconnected for caller '{caller}'")
         return Response(content="<Response></Response>", media_type="application/xml")
 
-    # Default fallback for unexpected/missing events
-    return Response(content="<Response><Say>Thank you for calling. Goodbye!</Say></Response>", media_type="application/xml")
+    return Response(content="<Response><PlayText>Thank you for calling. Goodbye!</PlayText></Response>", media_type="application/xml")
