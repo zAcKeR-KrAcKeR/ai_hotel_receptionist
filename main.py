@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Response
-from orchestrator import process_call
-from dotenv import load_dotenv
 import logging
+from orchestrator import orchestrator
+from dotenv import load_dotenv
 
 load_dotenv()
 app = FastAPI()
@@ -11,13 +11,19 @@ logger = logging.getLogger("uvicorn.error")
 async def health_check():
     return {"status": "OK", "service": "AI Receptionist"}
 
-@app.get("/kookoo_webhook")
+@app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
+    # Handle both GET (KooKoo default) and POST (optional)
+    is_post = request.method == "POST"
+    form = await request.form() if is_post else {}
     params = request.query_params
 
-    caller = params.get("cid")
-    event = params.get("event")
-    recording_url = params.get("data")
+    def pick(key):
+        return form.get(key) if key in form else params.get(key)
+
+    caller = pick("cid")
+    event = pick("event")
+    recording_url = pick("data")
 
     logger.info(f"Received webhook event '{event}' from caller '{caller}'")
 
@@ -37,20 +43,23 @@ async def kookoo_webhook(request: Request):
         if not recording_url:
             logger.error(f"No audio URL passed in Record event for caller '{caller}'")
             return Response(
-                content="<Response><Say>Sorry, no audio was captured. Please speak after the beep next time.</Say></Response>",
+                content="<Response><Say>Sorry, I did not receive anything. Please try again.</Say></Response>",
                 media_type="application/xml",
             )
-
-        # Process audio and generate TTS response
-        response_audio_url = process_call(recording_url, caller)
-
+        response_audio_url = orchestrator.process_call(recording_url, caller)
         if response_audio_url:
-            return Response(content=f"<Response><PlayAudio>{response_audio_url}</PlayAudio></Response>", media_type="application/xml")
+            xml = f"<Response><PlayAudio>{response_audio_url}</PlayAudio></Response>"
         else:
-            return Response(content="<Response><Say>Sorry, we could not understand you. Please try again.</Say></Response>", media_type="application/xml")
+            xml = "<Response><Say>Sorry, there was an error processing your request.</Say></Response>"
 
-    elif event == "Disconnect":
-        logger.info(f"Call disconnected for caller '{caller}'")
+        return Response(content=xml, media_type="application/xml")
+
+    elif event == "Hangup" or event == "Disconnect":
+        logger.info(f"Call ended by user {caller}")
         return Response(content="<Response></Response>", media_type="application/xml")
 
-    return Response(content="<Response><Say>Thank you for calling. Goodbye!</Say></Response>", media_type="application/xml")
+    # Default fallback
+    return Response(
+        content="<Response><Say>Thank you for calling. Goodbye!</Say></Response>",
+        media_type="application/xml",
+    )
