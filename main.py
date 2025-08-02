@@ -1,17 +1,27 @@
 from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
 import logging
+import os
+import uuid
 from orchestrator import orchestrator
 from dotenv import load_dotenv
+
+AUDIO_OUTPUT_DIR = "static/audio"
+os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
 
 load_dotenv()
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
 
+# Serve audio files (tts outputs) as /audio/filename
+app.mount("/audio", StaticFiles(directory=AUDIO_OUTPUT_DIR), name="audio")
+
+# You may want to change this to your public Render URL, or use os.getenv.
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com")
 
 @app.get("/")
 async def health_check():
     return {"status": "OK", "service": "AI Receptionist"}
-
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
@@ -25,39 +35,96 @@ async def kookoo_webhook(request: Request):
     caller = pick("cid")
     event = pick("event")
     recording_url = pick("data")
+    sid = pick("sid") or str(uuid.uuid4())
 
     logger.info(f"Received webhook event '{event}' from caller '{caller}'")
 
     if event == "NewCall":
-        xml_response = (
-            "<Response>"
-            "<Say>Welcome to Grand Hotel. How can I assist you today?</Say>"
-            "<Record>"
-            "<MaxDuration>30</MaxDuration>"
-            "<SilenceTimeout>5</SilenceTimeout>"
-            "</Record>"
-            "</Response>"
-        )
-        return Response(content=xml_response, media_type="application/xml")
+        greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
+
+        # Synthesize greeting and save to /audio
+        from agents.tts_tool import tts_tool  # Make sure this import works
+        greeting_wav = tts_tool.synthesize_speech(greeting_text)
+        if not greeting_wav or not os.path.exists(greeting_wav):
+            # fallback: use playtext XML if TTS fails
+            xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <playtext>Welcome to Grand Hotel. How can I assist you today?</playtext>
+    <record maxduration="30" silence="5"/>
+</Response>
+"""
+            return Response(content=xml, media_type="application/xml")
+        # Move/rename to static/audio/greeting_{sid}.wav
+        greeting_fname = f"greeting_{sid}.wav"
+        greeting_path = os.path.join(AUDIO_OUTPUT_DIR, greeting_fname)
+        os.rename(greeting_wav, greeting_path)
+        public_greeting_url = f"{PUBLIC_BASE_URL.rstrip('/')}/audio/{greeting_fname}"
+        # Respond with "playaudio" (lowercase) and record instruction
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <playaudio>{public_greeting_url}</playaudio>
+    <record maxduration="30" silence="5"/>
+</Response>
+"""
+        return Response(content=xml, media_type="application/xml")
 
     elif event == "Record":
         if not recording_url:
             logger.error(f"No audio URL passed in Record event for caller '{caller}'")
-            return Response(
-                content="<Response><Say>Sorry, no audio was captured. Please speak after the beep next time.</Say></Response>",
-                media_type="application/xml",
-            )
-        resp_audio_url = orchestrator.process_call(recording_url, caller)
+            xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <playtext>Sorry, no audio was captured. Please speak after the beep next time.</playtext>
+    <hangup/>
+</Response>
+"""
+            return Response(content=xml, media_type="application/xml")
+        try:
+            # orchestrator.process_call should now return a LOCAL wav/mp3 path relative to static/audio
+            resp_audio_local_path = orchestrator.process_call(recording_url, caller)
+        except Exception as e:
+            logger.exception(f"Error processing call for user {caller}: {str(e)}")
+            xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <playtext>There was a problem processing your request. Please try again later.</playtext>
+    <hangup/>
+</Response>
+"""
+            return Response(content=xml, media_type="application/xml")
 
-        if resp_audio_url:
-            xml = f"<Response><PlayAudio>{resp_audio_url}</PlayAudio></Response>"
+        if resp_audio_local_path and os.path.exists(resp_audio_local_path):
+            reply_fname = os.path.basename(resp_audio_local_path)
+            reply_url = f"{PUBLIC_BASE_URL.rstrip('/')}/audio/{reply_fname}"
+            xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <playaudio>{reply_url}</playaudio>
+    <record maxduration="30" silence="5"/>
+</Response>
+"""
         else:
-            xml = "<Response><Say>There was a problem processing your request. Please try again later.</Say></Response>"
+            xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <playtext>Sorry, something went wrong. Please try again later.</playtext>
+    <hangup/>
+</Response>
+"""
 
         return Response(content=xml, media_type="application/xml")
 
-    elif event == "Disconnect" or event == "Hangup":
+    elif event in ("Disconnect", "Hangup"):
         logger.info(f"Call ended by user {caller}")
-        return Response(content="<Response></Response>", media_type="application/xml")
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <playtext>Thank you for calling. Goodbye!</playtext>
+    <hangup/>
+</Response>
+"""
+        return Response(content=xml, media_type="application/xml")
 
-    return Response(content="<Response><Say>Thank you for calling. Goodbye!</Say></Response>", media_type="application/xml")
+    # Fallback
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <playtext>Thank you for calling. Goodbye!</playtext>
+    <hangup/>
+</Response>
+"""
+    return Response(content=xml, media_type="application/xml")
