@@ -13,15 +13,12 @@ load_dotenv()
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
 
-# Serve TTS audio files publicly from /audio/
+# Serve TTS audio publicly at /audio/
 app.mount("/audio", StaticFiles(directory=AUDIO_OUTPUT_DIR), name="audio")
-
-# Your deployed public base URL, adjust as needed or set in .env as PUBLIC_BASE_URL
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com")
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
-    # Extract parameters from POST form data or GET query params
     is_post = request.method == "POST"
     form = await request.form() if is_post else {}
     params = request.query_params
@@ -40,12 +37,10 @@ async def kookoo_webhook(request: Request):
         from agents.tts_tool import tts_tool
 
         greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
-
-        # FIXED: Call synthesize_speech with dict input as per LangChain schema
+        # Pass dict per LangChain schema to avoid ValidationError
         greeting_wav = tts_tool.synthesize_speech({"text": greeting_text})
 
         if not greeting_wav or not os.path.exists(greeting_wav):
-            # Fallback to text-to-speech-less XML response
             xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playtext>{greeting_text}</playtext>
@@ -53,13 +48,11 @@ async def kookoo_webhook(request: Request):
 </Response>"""
             return Response(content=xml, media_type="application/xml")
 
-        # Move the synthesized wav to static/audio with a unique name
         greeting_fname = f"greeting_{sid}.wav"
         greeting_path = os.path.join(AUDIO_OUTPUT_DIR, greeting_fname)
         os.rename(greeting_wav, greeting_path)
         public_greeting_url = f"{PUBLIC_BASE_URL.rstrip('/')}/audio/{greeting_fname}"
 
-        # Return XML response with playaudio tag (lowercase)
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playaudio>{public_greeting_url}</playaudio>
@@ -67,10 +60,9 @@ async def kookoo_webhook(request: Request):
 </Response>"""
         return Response(content=xml, media_type="application/xml")
 
-    # --- Handle other events as usual, unchanged ---
     elif event == "Record":
         if not recording_url:
-            logger.error(f"No audio URL passed in Record event for caller '{caller}'")
+            logger.error(f"No audio URL in Record event for caller '{caller}'")
             xml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playtext>Sorry, no audio was captured. Please speak after the beep next time.</playtext>
