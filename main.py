@@ -13,15 +13,11 @@ load_dotenv()
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
 
-# Serve TTS audio files publicly at /audio/
 app.mount("/audio", StaticFiles(directory=AUDIO_OUTPUT_DIR), name="audio")
-
-# Use your actual deployed public base URL here or via environment variable
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com")
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
 async def kookoo_webhook(request: Request):
-    # Extract params from either POST form or GET query
     is_post = request.method == "POST"
     form = await request.form() if is_post else {}
     params = request.query_params
@@ -41,11 +37,10 @@ async def kookoo_webhook(request: Request):
 
         greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
 
-        # Correct: Use .run() method passing dict as per LangChain Tool schema
-        greeting_wav = tts_tool.run({"text": greeting_text})
+        # Call synthesize_speech with string input (your own AzureTTSTool)
+        greeting_wav = tts_tool.synthesize_speech(greeting_text)
 
         if not greeting_wav or not os.path.exists(greeting_wav):
-            # If TTS fails, fallback to plain text speech via XML
             xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playtext>{greeting_text}</playtext>
@@ -53,7 +48,6 @@ async def kookoo_webhook(request: Request):
 </Response>"""
             return Response(content=xml, media_type="application/xml")
 
-        # Move generated wav to your static audio folder for public serving
         greeting_fname = f"greeting_{sid}.wav"
         greeting_path = os.path.join(AUDIO_OUTPUT_DIR, greeting_fname)
         os.rename(greeting_wav, greeting_path)
@@ -76,7 +70,6 @@ async def kookoo_webhook(request: Request):
 </Response>"""
             return Response(content=xml, media_type="application/xml")
         try:
-            # Call your orchestrator to process the recording & produce response audio file
             resp_audio_local_path = orchestrator.process_call(recording_url, caller)
         except Exception as e:
             logger.exception(f"Error processing call for user {caller}: {str(e)}")
@@ -113,7 +106,7 @@ async def kookoo_webhook(request: Request):
 </Response>"""
         return Response(content=xml, media_type="application/xml")
 
-    # Default fallback response
+    # Default fallback
     xml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playtext>Thank you for calling. Goodbye!</playtext>
