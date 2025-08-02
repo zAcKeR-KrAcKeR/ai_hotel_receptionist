@@ -13,7 +13,9 @@ load_dotenv()
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
 
+# Serve audio files publicly
 app.mount("/audio", StaticFiles(directory=AUDIO_OUTPUT_DIR), name="audio")
+
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com")
 
 @app.api_route("/kookoo_webhook", methods=["GET", "POST"])
@@ -37,7 +39,7 @@ async def kookoo_webhook(request: Request):
 
         greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
 
-        # Call synthesize_speech with string input (your own AzureTTSTool)
+        # Pass plain string as expected by your AzureTTSTool class
         greeting_wav = tts_tool.synthesize_speech(greeting_text)
 
         if not greeting_wav or not os.path.exists(greeting_wav):
