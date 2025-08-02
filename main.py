@@ -13,10 +13,9 @@ load_dotenv()
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
 
-# Serve audio files (tts outputs) as /audio/filename
+# Serve /audio/ directory as public for KooKoo to fetch TTS audio
 app.mount("/audio", StaticFiles(directory=AUDIO_OUTPUT_DIR), name="audio")
 
-# You may want to change this to your public Render URL, or use os.getenv.
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com")
 
 @app.get("/")
@@ -42,30 +41,25 @@ async def kookoo_webhook(request: Request):
     if event == "NewCall":
         greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
 
-        # Synthesize greeting and save to /audio
-        from agents.tts_tool import tts_tool  # Make sure this import works
+        # Synthesize greeting using your existing TTS tool
+        from agents.tts_tool import tts_tool
         greeting_wav = tts_tool.synthesize_speech(greeting_text)
         if not greeting_wav or not os.path.exists(greeting_wav):
-            # fallback: use playtext XML if TTS fails
             xml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playtext>Welcome to Grand Hotel. How can I assist you today?</playtext>
     <record maxduration="30" silence="5"/>
-</Response>
-"""
+</Response>"""
             return Response(content=xml, media_type="application/xml")
-        # Move/rename to static/audio/greeting_{sid}.wav
         greeting_fname = f"greeting_{sid}.wav"
         greeting_path = os.path.join(AUDIO_OUTPUT_DIR, greeting_fname)
         os.rename(greeting_wav, greeting_path)
         public_greeting_url = f"{PUBLIC_BASE_URL.rstrip('/')}/audio/{greeting_fname}"
-        # Respond with "playaudio" (lowercase) and record instruction
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playaudio>{public_greeting_url}</playaudio>
     <record maxduration="30" silence="5"/>
-</Response>
-"""
+</Response>"""
         return Response(content=xml, media_type="application/xml")
 
     elif event == "Record":
@@ -75,11 +69,10 @@ async def kookoo_webhook(request: Request):
 <Response>
     <playtext>Sorry, no audio was captured. Please speak after the beep next time.</playtext>
     <hangup/>
-</Response>
-"""
+</Response>"""
             return Response(content=xml, media_type="application/xml")
         try:
-            # orchestrator.process_call should now return a LOCAL wav/mp3 path relative to static/audio
+            # orchestrator.process_call returns path to local file in static/audio
             resp_audio_local_path = orchestrator.process_call(recording_url, caller)
         except Exception as e:
             logger.exception(f"Error processing call for user {caller}: {str(e)}")
@@ -87,8 +80,7 @@ async def kookoo_webhook(request: Request):
 <Response>
     <playtext>There was a problem processing your request. Please try again later.</playtext>
     <hangup/>
-</Response>
-"""
+</Response>"""
             return Response(content=xml, media_type="application/xml")
 
         if resp_audio_local_path and os.path.exists(resp_audio_local_path):
@@ -98,15 +90,13 @@ async def kookoo_webhook(request: Request):
 <Response>
     <playaudio>{reply_url}</playaudio>
     <record maxduration="30" silence="5"/>
-</Response>
-"""
+</Response>"""
         else:
             xml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playtext>Sorry, something went wrong. Please try again later.</playtext>
     <hangup/>
-</Response>
-"""
+</Response>"""
 
         return Response(content=xml, media_type="application/xml")
 
@@ -116,15 +106,12 @@ async def kookoo_webhook(request: Request):
 <Response>
     <playtext>Thank you for calling. Goodbye!</playtext>
     <hangup/>
-</Response>
-"""
+</Response>"""
         return Response(content=xml, media_type="application/xml")
 
-    # Fallback
     xml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <playtext>Thank you for calling. Goodbye!</playtext>
     <hangup/>
-</Response>
-"""
+</Response>"""
     return Response(content=xml, media_type="application/xml")
