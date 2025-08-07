@@ -1,3 +1,5 @@
+# main.py
+
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 import logging
@@ -8,110 +10,46 @@ from dotenv import load_dotenv
 
 AUDIO_OUTPUT_DIR = "static/audio"
 os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
-
 load_dotenv()
+
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
 
-# Serve audio files publicly
+# Serve audio files publicly (Exotel IVR needs to access them)
 app.mount("/audio", StaticFiles(directory=AUDIO_OUTPUT_DIR), name="audio")
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com")
 
-@app.api_route("/kookoo_webhook", methods=["GET", "POST"])
-async def kookoo_webhook(request: Request):
-    is_post = request.method == "POST"
-    form = await request.form() if is_post else {}
-    params = request.query_params
+@app.post("/exotel_webhook")
+async def exotel_webhook(request: Request):
+    form = await request.form()
+    call_sid = form.get("CallSid")
+    caller = form.get("From")
+    event = form.get("Status")  # Exotel: "ringing", "in-progress", "completed"
+    recording_url = form.get("RecordingUrl")
+    logger.info(f"Exotel event '{event}' from '{caller}', CallSid: {call_sid}")
 
-    def pick(key):
-        return form.get(key) if key in form else params.get(key)
-
-    caller = pick("cid")
-    event = pick("event")
-    recording_url = pick("data")
-    sid = pick("sid") or str(uuid.uuid4())
-
-    logger.info(f"Received webhook event '{event}' from caller '{caller}'")
-
-    if event == "NewCall":
+    if event == "ringing":
+        # Call is connecting; synthesize and save greeting audio for IVR
         from agents.tts_tool import tts_tool
-
         greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
-
-        # Pass plain string as expected by your AzureTTSTool class
         greeting_wav = tts_tool.synthesize_speech(greeting_text)
-
-        if not greeting_wav or not os.path.exists(greeting_wav):
-            xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <playtext>{greeting_text}</playtext>
-    <record maxduration="30" silence="5"/>
-</Response>"""
-            return Response(content=xml, media_type="application/xml")
-
-        greeting_fname = f"greeting_{sid}.wav"
+        greeting_fname = f"greeting_{call_sid or uuid.uuid4().hex}.wav"
         greeting_path = os.path.join(AUDIO_OUTPUT_DIR, greeting_fname)
         os.rename(greeting_wav, greeting_path)
         public_greeting_url = f"{PUBLIC_BASE_URL.rstrip('/')}/audio/{greeting_fname}"
+        # Exotel can be set up to play this greeting audio via its Play applet using this public URL
+        return Response(content="OK", media_type="text/plain")
 
-        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <playaudio>{public_greeting_url}</playaudio>
-    <record maxduration="30" silence="5"/>
-</Response>"""
-        return Response(content=xml, media_type="application/xml")
-
-    elif event == "Record":
-        if not recording_url:
-            logger.error(f"No audio URL in Record event for caller '{caller}'")
-            xml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <playtext>Sorry, no audio was captured. Please speak after the beep next time.</playtext>
-    <hangup/>
-</Response>"""
-            return Response(content=xml, media_type="application/xml")
+    elif event == "completed" and recording_url:
+        # Call has ended, with user speech recorded
         try:
             resp_audio_local_path = orchestrator.process_call(recording_url, caller)
+            logger.info(f"Processed Exotel recording for {caller}")
         except Exception as e:
-            logger.exception(f"Error processing call for user {caller}: {str(e)}")
-            xml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <playtext>There was a problem processing your request. Please try again later.</playtext>
-    <hangup/>
-</Response>"""
-            return Response(content=xml, media_type="application/xml")
+            logger.error(f"Error handling Exotel call: {str(e)}")
+            return Response(content="Call processing failed", media_type="text/plain")
+        return Response(content="Call processed", media_type="text/plain")
 
-        if resp_audio_local_path and os.path.exists(resp_audio_local_path):
-            reply_fname = os.path.basename(resp_audio_local_path)
-            reply_url = f"{PUBLIC_BASE_URL.rstrip('/')}/audio/{reply_fname}"
-            xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <playaudio>{reply_url}</playaudio>
-    <record maxduration="30" silence="5"/>
-</Response>"""
-        else:
-            xml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <playtext>Sorry, something went wrong. Please try again later.</playtext>
-    <hangup/>
-</Response>"""
-
-        return Response(content=xml, media_type="application/xml")
-
-    elif event in ("Disconnect", "Hangup"):
-        logger.info(f"Call ended by user {caller}")
-        xml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <playtext>Thank you for calling. Goodbye!</playtext>
-    <hangup/>
-</Response>"""
-        return Response(content=xml, media_type="application/xml")
-
-    # Default fallback
-    xml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <playtext>Thank you for calling. Goodbye!</playtext>
-    <hangup/>
-</Response>"""
-    return Response(content=xml, media_type="application/xml")
+    # Optionally handle "in-progress" or other call events here
+    return Response(content="No action", media_type="text/plain")
