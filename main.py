@@ -11,40 +11,31 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 logger = logging.getLogger("uvicorn.error")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com").rstrip("/")
 
-# (mount your audio dir in app startup if not already done)
+app = FastAPI()  # Must be BEFORE using @app.api_route
 
 @app.api_route("/exotel_webhook", methods=["GET", "POST"])
 async def exotel_webhook(request: Request):
-    # Accept params from both GET and POST
     data = await request.form() if request.method == "POST" else request.query_params
     params = dict(data)
-
-    # 1. Log all incoming request data for debugging
     logger.info(f"Exotel webhook params: {params}")
 
-    # 2. Robust event extraction: accept any event/discriminator fields Exotel may use
     event = (
-        params.get("EventType") or
-        params.get("event_type") or
-        params.get("CallType") or
-        params.get("Direction") or
-        "start"
+        params.get("EventType")
+        or params.get("event_type")
+        or params.get("CallType")
+        or params.get("Direction")
+        or "start"
     )
     call_sid = params.get("CallSid") or str(uuid.uuid4())
     caller = params.get("From") or params.get("CallFrom") or params.get("Caller")
     recording_url = params.get("RecordingUrl")
-    # Include others if needed (e.g., To, CallTo, etc.)
 
     logger.info(f"[/exotel_webhook] Parsed event={event}, sid={call_sid}, caller={caller}")
 
-    # 3. Robust event-based branching.
     if event.lower() in ("start", "newcall", "incomingcall", "incoming", "call-attempt"):
-        # Greet the caller
         from agents.tts_tool import tts_tool
-
         greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
         greeting_wav = tts_tool.synthesize_speech(greeting_text)
-
         greeting_fname = f"greeting_{call_sid}.wav"
         greeting_path = os.path.join(AUDIO_DIR, greeting_fname)
         os.rename(greeting_wav, greeting_path)
