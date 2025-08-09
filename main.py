@@ -1,17 +1,20 @@
-from fastapi import Request, Response
-import uuid
-import os
+from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
 import logging
+import os
+import uuid
 
 from orchestrator import orchestrator
-from fastapi.staticfiles import StaticFiles
 
 AUDIO_DIR = "static/audio"
 os.makedirs(AUDIO_DIR, exist_ok=True)
 logger = logging.getLogger("uvicorn.error")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com").rstrip("/")
 
-app = FastAPI()  # Must be BEFORE using @app.api_route
+# Make sure your app is defined BEFORE any route decorators
+app = FastAPI()
+
+app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 @app.api_route("/exotel_webhook", methods=["GET", "POST"])
 async def exotel_webhook(request: Request):
