@@ -1,9 +1,10 @@
 import uuid
 import os
 import logging
+
 from agents.stt_tool import stt_tool
 from agents.llm_tools import llm_tool
-from agents.tts_tool import tts_tool
+from agents.tts_tool import AzureTTSTool    # <-- CHANGE: use only the class!
 from agents.autogen_agents import manager
 from utils.audio_handler import AudioHandler
 from database.queries import HotelDatabase
@@ -26,6 +27,7 @@ class CallOrchestrator:
             if not inp_file:
                 logger.error(f"Could not download input audio from {audio_url}")
                 return None
+
             logger.info(f"Downloaded audio file from {audio_url}")
 
             transcript = stt_tool.transcribe_audio(inp_file)
@@ -33,6 +35,7 @@ class CallOrchestrator:
 
             intent_result = llm_tool.analyze_intent(transcript)
             logger.debug(f"Intent extraction: {intent_result}")
+
             msg = (
                 f"User said: {transcript}\n"
                 f"Entities: {intent_result.get('entities')}\n"
@@ -41,10 +44,11 @@ class CallOrchestrator:
             chat_history = [{"role": "user", "content": msg}]
             result = manager.run(chat_history)
             response_text = result[-1]["content"] if isinstance(result, list) else str(result)
+
             logger.info(f"Generated response: {response_text}")
 
+            tts_tool = AzureTTSTool()                 # <-- CHANGE: use class instance!
             out_file = tts_tool.synthesize_speech(response_text)
-
             if not out_file or not os.path.exists(out_file):
                 logger.error("TTS failed, output file missing")
                 return None
@@ -54,18 +58,14 @@ class CallOrchestrator:
             os.rename(out_file, final_path)
             logger.info(f"Bot reply TTS available at {final_path}")
 
-            # Log conversation as usual
             self.db.log_conversation(user_phone, transcript, response_text)
-
             return final_path
 
         except Exception as e:
             logger.error(f"Error processing call for user {user_phone}: {e}")
             return None
-
         finally:
             if inp_file:
                 self.audio_handler.cleanup_temp_file(inp_file)
-            # DO NOT delete out_file/final_path (static/audio/...)
 
 orchestrator = CallOrchestrator()
