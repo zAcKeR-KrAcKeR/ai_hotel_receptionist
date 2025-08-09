@@ -39,7 +39,7 @@ async def exotel_webhook(request: Request):
 
         # ---- GREETING LOGIC ----
         if event.lower() in ("start", "newcall", "incomingcall", "incoming", "call-attempt"):
-            from agents.tts_tool import AzureTTSTool   # <--- CORRECT!
+            from agents.tts_tool import AzureTTSTool
             tts_tool = AzureTTSTool()
             greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
             greeting_wav = tts_tool.synthesize_speech(greeting_text)
