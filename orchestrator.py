@@ -4,7 +4,7 @@ import logging
 
 from agents.stt_tool import stt_tool
 from agents.llm_tools import llm_tool
-from agents.tts_tool import AzureTTSTool   # FIXED! Don't import tts_tool, only the class!
+from agents.tts_tool import AzureTTSTool  # ✅ FIXED: Import the class, not the tool!
 from agents.autogen_agents import manager
 from utils.audio_handler import AudioHandler
 from database.queries import HotelDatabase
@@ -47,9 +47,10 @@ class CallOrchestrator:
 
             logger.info(f"Generated response: {response_text}")
 
-            # ------- FIX: use AzureTTSTool --------
-            tts_tool = AzureTTSTool()
-            out_file = tts_tool.synthesize_speech(response_text)
+            # ✅ FIXED: Create instance of AzureTTSTool class
+            tts_instance = AzureTTSTool()
+            out_file = tts_instance.synthesize_speech(response_text)
+            
             if not out_file or not os.path.exists(out_file):
                 logger.error("TTS failed, output file missing")
                 return None
@@ -59,6 +60,7 @@ class CallOrchestrator:
             os.rename(out_file, final_path)
             logger.info(f"Bot reply TTS available at {final_path}")
 
+            # Log conversation as usual
             self.db.log_conversation(user_phone, transcript, response_text)
             return final_path
 
