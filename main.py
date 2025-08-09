@@ -37,13 +37,11 @@ async def exotel_webhook(request: Request):
 
         logger.info(f"[/exotel_webhook] Parsed event={event}, sid={call_sid}, caller={caller}")
 
-        # Greeting logic
         if event.lower() in ("start", "newcall", "incomingcall", "incoming", "call-attempt"):
-            # Use your TTS class directly (not the LangChain tool)
+            # ✅ Use your TTS class directly, not the wrapped tool!
             from agents.tts_tool import AzureTTSTool
             tts_tool = AzureTTSTool()
             greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
-            # Synthesize speech as a plain class method call
             greeting_wav = tts_tool.synthesize_speech(greeting_text)
 
             if not greeting_wav or not os.path.exists(greeting_wav):
@@ -67,7 +65,6 @@ async def exotel_webhook(request: Request):
 </Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
-        # AI response logic
         elif event.lower() in ("record", "recordingdone", "recording") and recording_url:
             try:
                 reply_audio = orchestrator.process_call(recording_url, caller)
@@ -90,14 +87,12 @@ async def exotel_webhook(request: Request):
                     <Say>Sorry, response failed.</Say><Hangup/></Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
-        # Goodbyes and wrap-up
         elif event.lower() in ("completed", "hangup", "end"):
             return Response(
                 "<?xml version='1.0' encoding='UTF-8'?><Response><Say>Thank you for calling. Goodbye!</Say></Response>",
                 media_type="application/xml"
             )
 
-        # Fallback/default for unknown event types
         return Response(
             "<?xml version='1.0' encoding='UTF-8'?><Response><Say>Thank you for calling.</Say><Hangup/></Response>",
             media_type="application/xml"
