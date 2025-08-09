@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-import logging
 import os
 import uuid
+import logging
 
 from orchestrator import orchestrator
 from dotenv import load_dotenv
@@ -37,7 +37,7 @@ async def exotel_webhook(request: Request):
 
         logger.info(f"[/exotel_webhook] Parsed event={event}, sid={call_sid}, caller={caller}")
 
-        # 1. Greeting on call start or call-attempt
+        # 1. Greeting on initial call
         if event.lower() in ("start", "newcall", "incomingcall", "incoming", "call-attempt"):
             from agents.tts_tool import AzureTTSTool
             tts_tool = AzureTTSTool()
@@ -65,7 +65,7 @@ async def exotel_webhook(request: Request):
 </Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
-        # 2. After call is recorded, process and reply
+        # 2. Process user reply and play AI response
         elif event.lower() in ("record", "recordingdone", "recording") and recording_url:
             try:
                 reply_audio = orchestrator.process_call(recording_url, caller)
@@ -88,14 +88,14 @@ async def exotel_webhook(request: Request):
                     <Say>Sorry, response failed.</Say><Hangup/></Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
-        # 3. End-of-call, polite closure
+        # 3. Hangup/Goodbye
         elif event.lower() in ("completed", "hangup", "end"):
             return Response(
                 "<?xml version='1.0' encoding='UTF-8'?><Response><Say>Thank you for calling. Goodbye!</Say></Response>",
                 media_type="application/xml"
             )
 
-        # 4. Unexpected/missing event: generic polite fallback
+        # 4. Default fallback
         return Response(
             "<?xml version='1.0' encoding='UTF-8'?><Response><Say>Thank you for calling.</Say><Hangup/></Response>",
             media_type="application/xml"
