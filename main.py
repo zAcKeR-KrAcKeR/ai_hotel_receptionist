@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-import logging
 import os
 import uuid
+import logging
 
 from orchestrator import orchestrator
 from dotenv import load_dotenv
@@ -23,7 +23,7 @@ async def exotel_webhook(request: Request):
         data = await request.form() if request.method == "POST" else request.query_params
         params = dict(data)
         logger.info(f"Exotel webhook params: {params}")
-        # Accept all possible event field variants from Exotel
+
         event = (
             params.get("EventType")
             or params.get("event_type")
@@ -37,14 +37,15 @@ async def exotel_webhook(request: Request):
 
         logger.info(f"[/exotel_webhook] Parsed event={event}, sid={call_sid}, caller={caller}")
 
+        # Greeting logic
         if event.lower() in ("start", "newcall", "incomingcall", "incoming", "call-attempt"):
-            # Use your own class to synthesize speech (avoid LangChain Tool errors!)
+            # Use your TTS class directly (not the LangChain tool)
             from agents.tts_tool import AzureTTSTool
             tts_tool = AzureTTSTool()
             greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
+            # Synthesize speech as a plain class method call
             greeting_wav = tts_tool.synthesize_speech(greeting_text)
 
-            # Check for errors in synthesis
             if not greeting_wav or not os.path.exists(greeting_wav):
                 logger.error("TTS synthesis failed, returning fallback Say")
                 response_xml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -66,6 +67,7 @@ async def exotel_webhook(request: Request):
 </Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
+        # AI response logic
         elif event.lower() in ("record", "recordingdone", "recording") and recording_url:
             try:
                 reply_audio = orchestrator.process_call(recording_url, caller)
@@ -88,13 +90,14 @@ async def exotel_webhook(request: Request):
                     <Say>Sorry, response failed.</Say><Hangup/></Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
+        # Goodbyes and wrap-up
         elif event.lower() in ("completed", "hangup", "end"):
             return Response(
                 "<?xml version='1.0' encoding='UTF-8'?><Response><Say>Thank you for calling. Goodbye!</Say></Response>",
                 media_type="application/xml"
             )
 
-        # Default fallback for unknown event types
+        # Fallback/default for unknown event types
         return Response(
             "<?xml version='1.0' encoding='UTF-8'?><Response><Say>Thank you for calling.</Say><Hangup/></Response>",
             media_type="application/xml"
