@@ -46,12 +46,12 @@ async def exotel_webhook(request: Request):
 
             if not greeting_wav or not os.path.exists(greeting_wav):
                 logger.error("TTS synthesis failed, returning fallback Say")
-                response_xml = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say>Welcome to Grand Hotel. How can I assist you today?</Say>
-    <Hangup/>
-</Response>"""
-                return Response(content=response_xml, media_type="application/xml")
+                return Response(
+                    '<?xml version="1.0" encoding="UTF-8"?><Response>'
+                    '<Say>Welcome to Grand Hotel. How can I assist you today?</Say>'
+                    '<Hangup/></Response>',
+                    media_type="application/xml"
+                )
 
             greeting_fname = f"greeting_{call_sid}.wav"
             greeting_path = os.path.join(AUDIO_DIR, greeting_fname)
@@ -71,9 +71,12 @@ async def exotel_webhook(request: Request):
                 reply_audio = orchestrator.process_call(recording_url, caller)
             except Exception as e:
                 logger.error(f"orchestrator error: {e}")
-                response_xml = """<?xml version='1.0' encoding='UTF-8'?><Response>
-                    <Say>Sorry, there was a problem. Please try again later.</Say><Hangup/></Response>"""
-                return Response(content=response_xml, media_type="application/xml")
+                return Response(
+                    '<?xml version="1.0" encoding="UTF-8"?><Response>'
+                    '<Say>Sorry, there was a problem. Please try again later.</Say>'
+                    '<Hangup/></Response>',
+                    media_type="application/xml"
+                )
 
             if reply_audio and os.path.exists(reply_audio):
                 fname = os.path.basename(reply_audio)
@@ -84,25 +87,29 @@ async def exotel_webhook(request: Request):
     <Record timeout="5" maxDuration="30"/>
 </Response>"""
             else:
-                response_xml = """<?xml version='1.0' encoding='UTF-8'?><Response>
-                    <Say>Sorry, response failed.</Say><Hangup/></Response>"""
+                response_xml = """<?xml version="1.0" encoding="UTF-8"?><Response>
+<Say>Sorry, response failed.</Say><Hangup/></Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
         # ---- GOODBYE & END ----
         elif event.lower() in ("completed", "hangup", "end"):
             return Response(
-                "<?xml version='1.0' encoding='UTF-8'?><Response><Say>Thank you for calling. Goodbye!</Say></Response>",
+                '<?xml version="1.0" encoding="UTF-8"?><Response>'
+                '<Say>Thank you for calling. Goodbye!</Say></Response>',
                 media_type="application/xml"
             )
 
         # ---- DEFAULT / UNKNOWN ----
         return Response(
-            "<?xml version='1.0' encoding='UTF-8'?><Response><Say>Thank you for calling.</Say><Hangup/></Response>",
+            '<?xml version="1.0" encoding="UTF-8"?><Response>'
+            '<Say>Thank you for calling.</Say><Hangup/></Response>',
             media_type="application/xml"
         )
 
     except Exception as e:
         logger.error(f"Fatal server error: {e}")
-        response_xml = """<?xml version='1.0' encoding='UTF-8'?><Response>
-            <Say>Sorry, a server error occurred.</Say><Hangup/></Response>"""
-        return Response(content=response_xml, media_type="application/xml")
+        return Response(
+            '<?xml version="1.0" encoding="UTF-8"?><Response>'
+            '<Say>Sorry, a server error occurred.</Say><Hangup/></Response>',
+            media_type="application/xml"
+        )
