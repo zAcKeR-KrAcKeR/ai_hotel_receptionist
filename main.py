@@ -29,46 +29,55 @@ async def exotel_webhook(request: Request):
         caller = params.get("From") or params.get("Caller")
         recording_url = params.get("RecordingUrl")
 
+        logger.info(f"Processing event: {event} for caller: {caller}")
+
         if event.lower() in ("start", "incoming", "call_attempt"):
-            from agents.tts_tool import AzureTTSTool  # ✅ Fixed class name
+            from agents.tts_tool import AzureTTSTool
             tts = AzureTTSTool()
             greeting_text = "Welcome to Grand Hotel. How can I help you today?"
             wav_path = tts.synthesize_speech(greeting_text)
 
             if not wav_path or not os.path.exists(wav_path):
+                logger.warning("TTS failed, using fallback Say")
                 resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Welcome to Grand Hotel. How can I help you today?</Say>
-    <Hangup/>
+    <Record timeout="10" maxLength="30" action="https://ai-hotel-receptionist.onrender.com/exotel_webhook"/>
 </Response>"""
                 return Response(content=resp, media_type="application/xml")
 
             new_path = os.path.join(AUDIO_DIR, f"greeting_{call_sid}.wav")
             os.rename(wav_path, new_path)
             audio_url = f"{PUBLIC_BASE_URL}/audio/greeting_{call_sid}.wav"
+            
+            logger.info(f"Playing greeting audio: {audio_url}")
 
             resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{audio_url}</Play>
-    <Record timeout="5" maxLength="30"/>
+    <Record timeout="10" maxLength="30" action="https://ai-hotel-receptionist.onrender.com/exotel_webhook"/>
 </Response>"""
             return Response(content=resp, media_type="application/xml")
 
-        elif event.lower() in ("recorded", "recording_done") and recording_url:
+        elif event.lower() in ("recorded", "recording_done", "record") and recording_url:
+            logger.info(f"Processing recording: {recording_url}")
             reply_audio = orchestrator.process_call(recording_url, caller)
 
             if reply_audio and os.path.exists(reply_audio):
                 reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
+                logger.info(f"Playing AI reply: {reply_url}")
+                
                 resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{reply_url}</Play>
-    <Record timeout="5" maxLength="30"/>
+    <Record timeout="10" maxLength="30" action="https://ai-hotel-receptionist.onrender.com/exotel_webhook"/>
 </Response>"""
                 return Response(content=resp, media_type="application/xml")
 
+            logger.error("AI response generation failed")
             resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Sorry, something went wrong.</Say>
+    <Say>Sorry, something went wrong. Please try again.</Say>
     <Hangup/>
 </Response>"""
             return Response(content=resp, media_type="application/xml")
@@ -76,13 +85,14 @@ async def exotel_webhook(request: Request):
         elif event.lower() in ("completed", "hangup", "end"):
             resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Thank you for calling. Goodbye.</Say>
+    <Say>Thank you for calling Grand Hotel. Goodbye!</Say>
 </Response>"""
             return Response(content=resp, media_type="application/xml")
 
+        # Default response
         resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Thank you for calling.</Say>
+    <Say>Thank you for calling Grand Hotel.</Say>
     <Hangup/>
 </Response>"""
         return Response(content=resp, media_type="application/xml")
@@ -91,7 +101,7 @@ async def exotel_webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Sorry, an error occurred.</Say>
+    <Say>Sorry, a server error occurred. Please try again later.</Say>
     <Hangup/>
 </Response>"""
         return Response(content=resp, media_type="application/xml")
