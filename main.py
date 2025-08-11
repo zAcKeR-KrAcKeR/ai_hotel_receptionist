@@ -17,6 +17,7 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.on
 app = FastAPI()
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
+
 @app.api_route("/exotel_webhook", methods=["GET", "POST"])
 async def exotel_webhook(request: Request):
     try:
@@ -37,7 +38,7 @@ async def exotel_webhook(request: Request):
 
         logger.info(f"[/exotel_webhook] Parsed event={event}, sid={call_sid}, caller={caller}")
 
-        # ---- GREETING LOGIC ----
+        # --- Greeting stage
         if event.lower() in ("start", "newcall", "incomingcall", "incoming", "call-attempt"):
             from agents.tts_tool import AzureTTSTool
             tts_tool = AzureTTSTool()
@@ -65,7 +66,7 @@ async def exotel_webhook(request: Request):
 </Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
-        # ---- AI RESPONSE LOGIC ----
+        # --- Recording/AI reply stage
         elif event.lower() in ("record", "recordingdone", "recording") and recording_url:
             try:
                 reply_audio = orchestrator.process_call(recording_url, caller)
@@ -91,7 +92,7 @@ async def exotel_webhook(request: Request):
 <Say>Sorry, response failed.</Say><Hangup/></Response>"""
             return Response(content=response_xml, media_type="application/xml")
 
-        # ---- GOODBYE & END ----
+        # --- Call end
         elif event.lower() in ("completed", "hangup", "end"):
             return Response(
                 '<?xml version="1.0" encoding="UTF-8"?><Response>'
@@ -99,7 +100,7 @@ async def exotel_webhook(request: Request):
                 media_type="application/xml"
             )
 
-        # ---- DEFAULT / UNKNOWN ----
+        # --- Default fallback
         return Response(
             '<?xml version="1.0" encoding="UTF-8"?><Response>'
             '<Say>Thank you for calling.</Say><Hangup/></Response>',
