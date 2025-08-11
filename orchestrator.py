@@ -4,7 +4,8 @@ import logging
 
 from agents.stt_tool import stt_tool
 from agents.llm_tools import llm_tool
-from agents.tts_tool import AzureTTSTool  # Use class, not tool instance
+from agents.tts_tool import AzureTTSTool  # Correct import with capital "S"
+  # Use class, not tool instance
 from agents.autogen_agents import manager
 from utils import audio_handler  # adjust to your project structure
 from database import database  # adjust import
