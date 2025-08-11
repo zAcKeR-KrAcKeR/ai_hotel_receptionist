@@ -48,7 +48,7 @@ async def exotel_webhook(request: Request):
                 return Response(content=resp, media_type="application/xml")
 
             try:
-                # ✅ Create TTS instance directly (not via LangChain tool)
+                # ✅ Import and create TTS instance directly
                 from agents.tts_tool import AzureTTSTool
                 tts_instance = AzureTTSTool()
                 greeting_text = "Welcome to Grand Hotel. How can I help you today?"
@@ -88,37 +88,7 @@ async def exotel_webhook(request: Request):
 </Response>"""
                 return Response(content=resp, media_type="application/xml")
 
-        elif event.lower() in ("recorded", "recording_done", "record") and recording_url:
-            logger.info(f"Processing recording: {recording_url}")
-            reply_audio = orchestrator.process_call(recording_url, caller)
-
-            if reply_audio and os.path.exists(reply_audio):
-                reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
-                logger.info(f"Playing AI reply: {reply_url}")
-                
-                resp = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Play>{reply_url}</Play>
-    <Record timeout="10" maxLength="30"/>
-</Response>"""
-                return Response(content=resp, media_type="application/xml")
-
-            logger.error("AI response generation failed")
-            resp = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say>Sorry, something went wrong. Please try again.</Say>
-    <Hangup/>
-</Response>"""
-            return Response(content=resp, media_type="application/xml")
-
-        elif event.lower() in ("completed", "hangup", "end"):
-            resp = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say>Thank you for calling Grand Hotel. Goodbye!</Say>
-</Response>"""
-            return Response(content=resp, media_type="application/xml")
-
-        # Default response
+        # Handle other events...
         resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Thank you for calling Grand Hotel.</Say>
@@ -130,7 +100,7 @@ async def exotel_webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Sorry, a server error occurred. Please try again later.</Say>
+    <Say>Sorry, a server error occurred.</Say>
     <Hangup/>
 </Response>"""
         return Response(content=resp, media_type="application/xml")
