@@ -43,7 +43,7 @@ async def exotel_webhook(request: Request):
                 resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Welcome to Grand Hotel. How can I help you today?</Say>
-    <Record timeout="10" maxLength="30" action="https://ai-hotel-receptionist.onrender.com/exotel_webhook"/>
+    <Record timeout="10" maxLength="30"/>
 </Response>"""
                 return Response(content=resp, media_type="application/xml")
 
@@ -56,7 +56,7 @@ async def exotel_webhook(request: Request):
             resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{audio_url}</Play>
-    <Record timeout="10" maxLength="30" action="https://ai-hotel-receptionist.onrender.com/exotel_webhook"/>
+    <Record timeout="10" maxLength="30"/>
 </Response>"""
             return Response(content=resp, media_type="application/xml")
 
@@ -71,7 +71,7 @@ async def exotel_webhook(request: Request):
                 resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{reply_url}</Play>
-    <Record timeout="10" maxLength="30" action="https://ai-hotel-receptionist.onrender.com/exotel_webhook"/>
+    <Record timeout="10" maxLength="30"/>
 </Response>"""
                 return Response(content=resp, media_type="application/xml")
 
