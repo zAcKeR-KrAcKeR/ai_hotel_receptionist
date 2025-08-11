@@ -48,10 +48,13 @@ async def exotel_webhook(request: Request):
                 return Response(content=resp, media_type="application/xml")
 
             try:
+                # ✅ Create TTS instance directly (not via LangChain tool)
                 from agents.tts_tool import AzureTTSTool
-                tts = AzureTTSTool()
+                tts_instance = AzureTTSTool()
                 greeting_text = "Welcome to Grand Hotel. How can I help you today?"
-                wav_path = tts.synthesize_speech(greeting_text)
+                
+                # ✅ Call synthesize_speech as a regular method
+                wav_path = tts_instance.synthesize_speech(greeting_text)
                 logger.info(f"TTS generated file: {wav_path}")
 
                 if not wav_path or not os.path.exists(wav_path):
