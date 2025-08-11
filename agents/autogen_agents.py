@@ -1,31 +1,53 @@
 import os
 from autogen import AssistantAgent, GroupChat, GroupChatManager
+
 from agents.llm_tools import llm_tool
 from agents.stt_tool import stt_tool
-from agents.tts_tool import tts_tool  # LangChain tool singleton
-from agents.db_tools import get_food_menu_and_voice, process_booking_tool, process_food_order
+from agents.tts_tool import tts_tool
 
-PUBLIC_WEBHOOK_MODE = os.getenv("PUBLIC_WEBHOOK_MODE", "").lower() in ("true", "1", "yes")
+from agents.db_tools import (
+    get_food_menu_and_voice,
+    process_booking_tool,
+    process_food_order_tool,  # Fixed: was process_food_order
+)
 
-booking_agent = AssistantAgent("booking_agent", system_message="Booking and enquiries.")
+# Context flag: set in ENV when running webhook/server mode
+PUBLIC_WEBHOOK_MODE = os.getenv("PUBLIC_WEBHOOK_MODE", "").lower() in ("1", "true", "yes")
+
+# Booking Agent
+booking_agent = AssistantAgent(
+    "booking_agent",
+    system_message="Handle all room booking and room inquiry tasks for users."
+)
 booking_agent.register_for_execution("process_booking_tool", process_booking_tool)
 
-food_agent = AssistantAgent("food_agent", system_message="Food related.")
+# Food Agent
+food_agent = AssistantAgent(
+    "food_agent",
+    system_message="Handle food menu explanations and food order booking. Offer the menu if the user is vague."
+)
 food_agent.register_for_execution("get_food_menu_and_voice", get_food_menu_and_voice)
-food_agent.register_for_execution("process_food_order", process_food_order)
+food_agent.register_for_execution("process_food_order_tool", process_food_order_tool)  # Fixed
 
-front_agent = AssistantAgent("front_agent", system_message="Front desk, greeter.")
+# Front Desk / Greeter Agent
+front_agent = AssistantAgent(
+    "front_desk",
+    system_message="Greet guests, clarify missing information, and delegate booking or food queries to the right agent."
+)
+
+# Safe TTS registration with conditional webhook mode
 if not PUBLIC_WEBHOOK_MODE:
     front_agent.register_for_execution("synthesize_speech", tts_tool.synthesize_speech)
     booking_agent.register_for_execution("synthesize_speech", tts_tool.synthesize_speech)
     food_agent.register_for_execution("synthesize_speech", tts_tool.synthesize_speech)
 else:
-    def tts_stub(text):
+    def tts_stub(text: str) -> str:
         return ""
     front_agent.register_for_execution("synthesize_speech", tts_stub)
     booking_agent.register_for_execution("synthesize_speech", tts_stub)
     food_agent.register_for_execution("synthesize_speech", tts_stub)
 
+# Group Chat
 agents = [front_agent, booking_agent, food_agent]
 groupchat = GroupChat(agents=agents, messages=[], max_round=6)
 manager = GroupChatManager(groupchat, name="manager")
