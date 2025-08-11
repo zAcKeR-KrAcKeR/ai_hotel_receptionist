@@ -3,6 +3,8 @@ from fastapi.staticfiles import StaticFiles
 import logging
 import os
 import uuid
+import tempfile
+import azure.cognitiveservices.speech as speechsdk
 
 from orchestrator import orchestrator
 from dotenv import load_dotenv
@@ -16,6 +18,31 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.on
 
 app = FastAPI()
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
+
+def direct_azure_tts(text: str) -> str:
+    """Direct Azure TTS without LangChain validation"""
+    try:
+        speech_key = os.getenv("AZURE_SPEECH_KEY")
+        speech_region = os.getenv("AZURE_SPEECH_REGION")
+        
+        if not speech_key or not speech_region:
+            logger.error("Azure Speech credentials missing")
+            return ""
+            
+        speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=speech_region)
+        speech_config.speech_synthesis_voice_name = "en-IN-NeerNeural"
+        
+        temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        audio_config = speechsdk.AudioConfig(filename=temp_file.name)
+        synthesizer = speechsdk.SpeechSynthesizer(speech_config, audio_config)
+        
+        synthesizer.speak_text_async(text).get()
+        logger.info(f"Direct TTS synthesized to {temp_file.name}")
+        return temp_file.name
+        
+    except Exception as e:
+        logger.error(f"Direct TTS error: {e}")
+        return ""
 
 @app.api_route("/exotel_webhook", methods=["GET", "POST"])
 async def exotel_webhook(request: Request):
@@ -31,7 +58,6 @@ async def exotel_webhook(request: Request):
 
         logger.info(f"Processing event: {event} for caller: {caller}")
 
-        # ✅ Handle call initiation events
         if event.lower() in ("start", "incoming", "call_attempt", "call-attempt"):
             logger.info("Generating greeting TTS...")
             
@@ -49,13 +75,10 @@ async def exotel_webhook(request: Request):
                 return Response(content=resp, media_type="application/xml")
 
             try:
-                # ✅ Import and create TTS instance directly
-                from agents.tts_tool import AzureTTSTool
-                tts_instance = AzureTTSTool()
                 greeting_text = "Welcome to Grand Hotel. How can I help you today?"
                 
-                # ✅ Call synthesize_speech as a regular method
-                wav_path = tts_instance.synthesize_speech(greeting_text)
+                # ✅ Use direct Azure TTS without LangChain
+                wav_path = direct_azure_tts(greeting_text)
                 logger.info(f"TTS generated file: {wav_path}")
 
                 if not wav_path or not os.path.exists(wav_path):
