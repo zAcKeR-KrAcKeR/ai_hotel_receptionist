@@ -32,6 +32,7 @@ async def exotel_webhook(request: Request):
         logger.info(f"Processing event: {event} for caller: {caller}")
 
         if event.lower() in ("start", "incoming", "call_attempt"):
+            logger.info("Generating greeting TTS...")
             from agents.tts_tool import AzureTTSTool
             tts = AzureTTSTool()
             greeting_text = "Welcome to Grand Hotel. How can I help you today?"
