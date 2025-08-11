@@ -9,14 +9,13 @@ from dotenv import load_dotenv
 
 AUDIO_DIR = "static/audio"
 os.makedirs(AUDIO_DIR, exist_ok=True)
-
 load_dotenv()
+
 logger = logging.getLogger("uvicorn.error")
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com").rstrip("/")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_URL", "https://your-deployment-url").rstrip("/")
 
 app = FastAPI()
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
-
 
 @app.api_route("/exotel_webhook", methods=["GET", "POST"])
 async def exotel_webhook(request: Request):
@@ -24,93 +23,53 @@ async def exotel_webhook(request: Request):
         data = await request.form() if request.method == "POST" else request.query_params
         params = dict(data)
         logger.info(f"Exotel webhook params: {params}")
-
-        event = (
-            params.get("EventType")
-            or params.get("event_type")
-            or params.get("CallType")
-            or params.get("Direction")
-            or "start"
-        )
+        event = params.get("EventType") or params.get("event") or params.get("CallType") or "start"
         call_sid = params.get("CallSid") or str(uuid.uuid4())
-        caller = params.get("From") or params.get("CallFrom") or params.get("Caller")
-        recording_url = params.get("RecordingUrl")
+        caller = params.get("From") or params.get("Caller")
 
-        logger.info(f"[/exotel_webhook] Parsed event={event}, sid={call_sid}, caller={caller}")
-
-        # --- Greeting stage
-        if event.lower() in ("start", "newcall", "incomingcall", "incoming", "call-attempt"):
+        if event.lower() in ("start", "incoming", "call_attempt"):
             from agents.tts_tool import AzureTTSTool
             tts_tool = AzureTTSTool()
-            greeting_text = "Welcome to Grand Hotel. How can I assist you today?"
+            greeting_text = "Welcome to Grand Hotel. How may I assist you?"
             greeting_wav = tts_tool.synthesize_speech(greeting_text)
 
             if not greeting_wav or not os.path.exists(greeting_wav):
-                logger.error("TTS synthesis failed, returning fallback Say")
-                return Response(
-                    '<?xml version="1.0" encoding="UTF-8"?><Response>'
-                    '<Say>Welcome to Grand Hotel. How can I assist you today?</Say>'
-                    '<Hangup/></Response>',
-                    media_type="application/xml"
-                )
+                xml_resp = "<Response><Say>Welcome to Grand Hotel</Say><Hangup/></Response>"
+                return Response(content=xml_resp, media_type="application/xml")
 
-            greeting_fname = f"greeting_{call_sid}.wav"
-            greeting_path = os.path.join(AUDIO_DIR, greeting_fname)
-            os.rename(greeting_wav, greeting_path)
-            public_greeting_url = f"{PUBLIC_BASE_URL}/audio/{greeting_fname}"
+            wav_name = f"greeting_{call_sid}.wav"
+            new_path = os.path.join(AUDIO_DIR, wav_name)
+            os.rename(greeting_wav, new_path)
+            audio_url = f"{PUBLIC_BASE_URL}/audio/{wav_name}"
 
-            response_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+            xml_resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Play>{public_greeting_url}</Play>
-    <Record timeout="5" maxDuration="30"/>
+    <Play>{audio_url}</Play>
+    <Record timeout="5" maxLength="30"/>
 </Response>"""
-            return Response(content=response_xml, media_type="application/xml")
 
-        # --- Recording/AI reply stage
-        elif event.lower() in ("record", "recordingdone", "recording") and recording_url:
-            try:
-                reply_audio = orchestrator.process_call(recording_url, caller)
-            except Exception as e:
-                logger.error(f"orchestrator error: {e}")
-                return Response(
-                    '<?xml version="1.0" encoding="UTF-8"?><Response>'
-                    '<Say>Sorry, there was a problem. Please try again later.</Say>'
-                    '<Hangup/></Response>',
-                    media_type="application/xml"
-                )
+            return Response(content=xml_resp, media_type="application/xml")
 
-            if reply_audio and os.path.exists(reply_audio):
-                fname = os.path.basename(reply_audio)
-                reply_url = f"{PUBLIC_BASE_URL}/audio/{fname}"
-                response_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+        elif event.lower() in ("recorded", "recording_completed"):
+            recording_url = params.get("RecordingUrl")
+            reply_wav = orchestrator.process_call(recording_url, caller)
+            if reply_wav and os.path.exists(reply_wav):
+                reply_name = os.path.basename(reply_wav)
+                reply_url = f"{PUBLIC_BASE_URL}/audio/{reply_name}"
+                xml_resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{reply_url}</Play>
-    <Record timeout="5" maxDuration="30"/>
+    <Record timeout="5" maxLength="30"/>
 </Response>"""
-            else:
-                response_xml = """<?xml version="1.0" encoding="UTF-8"?><Response>
-<Say>Sorry, response failed.</Say><Hangup/></Response>"""
-            return Response(content=response_xml, media_type="application/xml")
+                return Response(content=xml_resp, media_type="application/xml")
 
-        # --- Call end
-        elif event.lower() in ("completed", "hangup", "end"):
-            return Response(
-                '<?xml version="1.0" encoding="UTF-8"?><Response>'
-                '<Say>Thank you for calling. Goodbye!</Say></Response>',
-                media_type="application/xml"
-            )
+            xml_resp = "<Response><Say>Sorry, something went wrong.</Say><Hangup/></Response>"
+            return Response(content=xml_resp, media_type="application/xml")
 
-        # --- Default fallback
-        return Response(
-            '<?xml version="1.0" encoding="UTF-8"?><Response>'
-            '<Say>Thank you for calling.</Say><Hangup/></Response>',
-            media_type="application/xml"
-        )
-
+        else:
+            xml_resp = "<Response><Say>Thank you for calling. Goodbye.</Say></Response>"
+            return Response(content=xml_resp, media_type="application/xml")
     except Exception as e:
-        logger.error(f"Fatal server error: {e}")
-        return Response(
-            '<?xml version="1.0" encoding="UTF-8"?><Response>'
-            '<Say>Sorry, a server error occurred.</Say><Hangup/></Response>',
-            media_type="application/xml"
-        )
+        logger.error(f"Error in webhook: {e}")
+        xml_resp = "<Response><Say>Sorry, a server error occurred.</Say><Hangup/></Response>"
+        return Response(content=xml_resp, media_type="application/xml")
