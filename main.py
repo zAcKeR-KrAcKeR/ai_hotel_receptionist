@@ -32,29 +32,29 @@ async def exotel_webhook(request: Request):
         logger.info(f"Processing CallType: {call_type} for caller: {caller}")
 
         if call_type == "call-attempt":
-            logger.info("Handling call-attempt with Passthru - playing greeting")
+            logger.info("Handling call-attempt - playing greeting and starting recording")
             
-            # ✅ CORRECT - Properly formatted XML response for Passthru applet
+            # ✅ Proper XML response with both greeting and recording
             resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Welcome to Grand Hotel. How can I help you today? Please speak after the beep.</Say>
     <Record timeout="10" maxLength="30"/>
 </Response>"""
             
-            logger.info("Returning XML greeting response for Passthru")
+            logger.info("Returning XML with greeting and record")
             return Response(content=resp, media_type="application/xml")
         
         elif call_type == "completed" and recording_url:
-            logger.info(f"Processing completed call with recording: {recording_url}")
+            logger.info(f"Processing recording: {recording_url}")
             
             try:
                 reply_audio = orchestrator.process_call(recording_url, caller)
                 
                 if reply_audio and os.path.exists(reply_audio):
                     reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
-                    logger.info(f"Generated AI reply audio: {reply_url}")
+                    logger.info(f"AI reply ready: {reply_url}")
                     
-                    # ✅ CORRECT - XML with Play tag for AI response
+                    # ✅ Play AI response and continue recording
                     resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{reply_url}</Play>
@@ -63,7 +63,6 @@ async def exotel_webhook(request: Request):
                     
                     return Response(content=resp, media_type="application/xml")
                 else:
-                    # ✅ CORRECT - XML fallback response
                     resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Thank you for your inquiry. Is there anything else I can help you with?</Say>
@@ -82,7 +81,6 @@ async def exotel_webhook(request: Request):
                 
                 return Response(content=resp, media_type="application/xml")
         
-        # Handle call end
         elif call_type in ("hangup", "completed", "end"):
             logger.info(f"Call ended for caller: {caller}")
             resp = """<?xml version="1.0" encoding="UTF-8"?>
@@ -93,11 +91,11 @@ async def exotel_webhook(request: Request):
             
             return Response(content=resp, media_type="application/xml")
         
-        # Default response
-        logger.info(f"Handling default case for CallType: {call_type}")
+        # Default case
+        logger.info(f"Default case for CallType: {call_type}")
         resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Thank you for calling Grand Hotel. How can I help you?</Say>
+    <Say>How can I assist you today?</Say>
     <Record timeout="10" maxLength="30"/>
 </Response>"""
         
@@ -107,7 +105,7 @@ async def exotel_webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Sorry, a server error occurred. Please try again later.</Say>
+    <Say>Sorry, there was an error. Please try again.</Say>
     <Hangup/>
 </Response>"""
         return Response(content=resp, media_type="application/xml")
