@@ -33,25 +33,25 @@ async def exotel_webhook(request: Request):
         logger.info(f"Processing CallType: {call_type} for caller: {caller}")
 
         if call_type == "call-attempt":
-            logger.info("Handling call-attempt - providing greeting")
+            logger.info("Handling call-attempt - answering call directly")
             
-            # ✅ Return JSON that answers the call and plays greeting
+            # ✅ Answer the call by "connecting" back to the caller
             response_data = {
                 "fetch_after_attempt": False,
                 "destination": {
-                    "numbers": []  # ✅ Empty - no agents to call
+                    "numbers": [caller]  # ✅ Call back the same caller to "answer"
                 },
                 "record": True,
-                "recording_channels": "single", 
+                "recording_channels": "single",
                 "max_conversation_duration": 300,
                 "start_call_playback": {
-                    "playback_to": "both",
+                    "playback_to": "callee",  # ✅ Play to the person being called
                     "type": "text",
                     "value": "Welcome to Grand Hotel. How can I help you today? Please speak after the beep."
                 }
             }
             
-            logger.info(f"Returning greeting response: {response_data}")
+            logger.info(f"Returning call answer response: {response_data}")
             return Response(
                 content=json.dumps(response_data),
                 media_type="application/json"
@@ -67,13 +67,14 @@ async def exotel_webhook(request: Request):
                     reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
                     logger.info(f"Generated AI reply audio: {reply_url}")
                     
+                    # ✅ Play AI response back to caller
                     response_data = {
                         "fetch_after_attempt": False,
                         "destination": {
-                            "numbers": []
+                            "numbers": [caller]  # Call back to deliver AI response
                         },
                         "start_call_playback": {
-                            "playback_to": "both",
+                            "playback_to": "callee",
                             "type": "audio_url", 
                             "value": reply_url
                         }
@@ -84,13 +85,14 @@ async def exotel_webhook(request: Request):
                         media_type="application/json"
                     )
                 else:
+                    # ✅ Fallback text response
                     response_data = {
                         "fetch_after_attempt": False,
                         "destination": {
-                            "numbers": []
+                            "numbers": [caller]
                         },
                         "start_call_playback": {
-                            "playback_to": "both",
+                            "playback_to": "callee",
                             "type": "text",
                             "value": "Thank you for your inquiry. We will get back to you soon."
                         }
@@ -103,8 +105,40 @@ async def exotel_webhook(request: Request):
                     
             except Exception as e:
                 logger.error(f"Error processing recording: {e}")
+                # Return fallback response on error
+                response_data = {
+                    "fetch_after_attempt": False,
+                    "destination": {
+                        "numbers": [caller]
+                    },
+                    "start_call_playback": {
+                        "playback_to": "callee",
+                        "type": "text",
+                        "value": "Sorry, I didn't catch that. Could you please repeat your request?"
+                    }
+                }
+                
+                return Response(
+                    content=json.dumps(response_data),
+                    media_type="application/json"
+                )
         
-        # Default response
+        # ✅ Handle other call types
+        elif call_type in ("hangup", "completed", "end"):
+            logger.info(f"Call ended for caller: {caller}")
+            response_data = {
+                "fetch_after_attempt": False,
+                "destination": {
+                    "numbers": []  # No further action needed
+                }
+            }
+            
+            return Response(
+                content=json.dumps(response_data),
+                media_type="application/json"
+            )
+        
+        # Default response for unhandled call types
         logger.info(f"Handling default case for CallType: {call_type}")
         response_data = {
             "fetch_after_attempt": False,
@@ -120,6 +154,7 @@ async def exotel_webhook(request: Request):
 
     except Exception as e:
         logger.error(f"Webhook error: {e}")
+        # ✅ Always return valid JSON even on errors
         error_response = {
             "fetch_after_attempt": False,
             "destination": {
