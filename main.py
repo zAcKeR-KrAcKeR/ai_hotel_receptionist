@@ -34,14 +34,14 @@ async def exotel_webhook(request: Request):
         if call_type == "call-attempt":
             logger.info("Handling call-attempt - playing greeting and starting recording")
             
-            # ✅ Proper XML response with both greeting and recording
+            # ✅ CORRECT XML format for Passthru applet
             resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Welcome to Grand Hotel. How can I help you today? Please speak after the beep.</Say>
     <Record timeout="10" maxLength="30"/>
 </Response>"""
             
-            logger.info("Returning XML with greeting and record")
+            logger.info("Returning proper XML response")
             return Response(content=resp, media_type="application/xml")
         
         elif call_type == "completed" and recording_url:
@@ -54,7 +54,6 @@ async def exotel_webhook(request: Request):
                     reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
                     logger.info(f"AI reply ready: {reply_url}")
                     
-                    # ✅ Play AI response and continue recording
                     resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{reply_url}</Play>
