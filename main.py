@@ -34,7 +34,7 @@ async def exotel_webhook(request: Request):
         if call_type == "call-attempt":
             logger.info("Handling call-attempt with Passthru - playing greeting")
             
-            # ✅ Return XML response for Passthru applet
+            # ✅ CORRECT - Proper XML format with Response tags
             resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Welcome to Grand Hotel. How can I help you today? Please speak after the beep.</Say>
@@ -54,7 +54,7 @@ async def exotel_webhook(request: Request):
                     reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
                     logger.info(f"Generated AI reply audio: {reply_url}")
                     
-                    # ✅ Play AI response
+                    # ✅ CORRECT - Proper XML with Play tag
                     resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{reply_url}</Play>
@@ -63,7 +63,7 @@ async def exotel_webhook(request: Request):
                     
                     return Response(content=resp, media_type="application/xml")
                 else:
-                    # ✅ Fallback text response
+                    # ✅ CORRECT - Proper XML fallback
                     resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Thank you for your inquiry. We will get back to you soon.</Say>
