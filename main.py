@@ -17,7 +17,7 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.on
 app = FastAPI()
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
-# Track conversation state
+# Track conversation state for multiple applets
 conversation_states = {}
 
 @app.api_route("/exotel_webhook", methods=["GET", "POST"])
@@ -34,25 +34,25 @@ async def exotel_webhook(request: Request):
 
         logger.info(f"Processing CallType: {call_type} for caller: {caller}")
 
-        # Track conversation state
+        # Initialize conversation state
         if call_sid not in conversation_states:
             conversation_states[call_sid] = {"step": 1}
         
         current_step = conversation_states[call_sid]["step"]
 
         if call_type == "call-attempt" and current_step == 1:
-            logger.info("Step 1: Playing greeting")
+            logger.info("Step 1: Playing greeting and starting recording")
             conversation_states[call_sid]["step"] = 2
             
-            # Return 200 OK to proceed to next Passthru applet
-            return Response(content="greeting", media_type="text/plain", status_code=200)
-        
-        elif call_type == "call-attempt" and current_step == 2:
-            logger.info("Step 2: Starting recording")
-            conversation_states[call_sid]["step"] = 3
+            # ✅ CORRECT XML format for greeting + recording
+            resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Welcome to Grand Hotel. How can I help you today? Please speak after the beep.</Say>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
             
-            # Return 200 OK to proceed to next applet
-            return Response(content="recording", media_type="text/plain", status_code=200)
+            logger.info("Returning proper XML greeting with recording")
+            return Response(content=resp, media_type="application/xml")
         
         elif call_type == "completed" and recording_url:
             logger.info(f"Processing recording: {recording_url}")
@@ -64,18 +64,75 @@ async def exotel_webhook(request: Request):
                     reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
                     logger.info(f"AI reply ready: {reply_url}")
                     
-                    conversation_states[call_sid]["step"] = 2  # Loop back to recording
-                    return Response(content="ai_response", media_type="text/plain", status_code=200)
+                    # ✅ Play AI response and continue recording
+                    resp = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Play>{reply_url}</Play>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
+                    
+                    return Response(content=resp, media_type="application/xml")
                 else:
-                    return Response(content="fallback", media_type="text/plain", status_code=200)
+                    # ✅ Fallback response
+                    resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for your inquiry. Is there anything else I can help you with?</Say>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
+                    
+                    return Response(content=resp, media_type="application/xml")
                     
             except Exception as e:
                 logger.error(f"Error processing recording: {e}")
-                return Response(content="error", media_type="text/plain", status_code=200)
+                resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Sorry, I didn't catch that. Could you please repeat your request?</Say>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
+                
+                return Response(content=resp, media_type="application/xml")
+        
+        elif call_type in ("hangup", "completed", "end"):
+            logger.info(f"Call ended for caller: {caller}")
+            # Clean up conversation state
+            if call_sid in conversation_states:
+                del conversation_states[call_sid]
+                
+            resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for calling Grand Hotel. Goodbye!</Say>
+    <Hangup/>
+</Response>"""
+            
+            return Response(content=resp, media_type="application/xml")
+        
+        # Handle subsequent call-attempt calls (multiple applets)
+        elif call_type == "call-attempt" and current_step > 1:
+            logger.info(f"Subsequent call-attempt (step {current_step}) - waiting for recording")
+            
+            # ✅ Just continue recording without repeating greeting
+            resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
+            
+            return Response(content=resp, media_type="application/xml")
         
         # Default case
-        return Response(content="default", media_type="text/plain", status_code=200)
+        logger.info(f"Default case for CallType: {call_type}")
+        resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>How can I assist you today?</Say>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
+        
+        return Response(content=resp, media_type="application/xml")
 
     except Exception as e:
         logger.error(f"Webhook error: {e}")
-        return Response(content="error", media_type="text/plain", status_code=500)
+        resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Sorry, there was an error. Please try again.</Say>
+    <Hangup/>
+</Response>"""
+        return Response(content=resp, media_type="application/xml")
