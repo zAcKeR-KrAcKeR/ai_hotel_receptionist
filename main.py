@@ -3,7 +3,6 @@ from fastapi.staticfiles import StaticFiles
 import logging
 import os
 import uuid
-import json
 
 from orchestrator import orchestrator
 from dotenv import load_dotenv
@@ -33,29 +32,17 @@ async def exotel_webhook(request: Request):
         logger.info(f"Processing CallType: {call_type} for caller: {caller}")
 
         if call_type == "call-attempt":
-            logger.info("Handling call-attempt - answering call directly")
+            logger.info("Handling call-attempt with Passthru - playing greeting")
             
-            # ✅ Answer the call by "connecting" back to the caller
-            response_data = {
-                "fetch_after_attempt": False,
-                "destination": {
-                    "numbers": [caller]  # ✅ Call back the same caller to "answer"
-                },
-                "record": True,
-                "recording_channels": "single",
-                "max_conversation_duration": 300,
-                "start_call_playback": {
-                    "playback_to": "callee",  # ✅ Play to the person being called
-                    "type": "text",
-                    "value": "Welcome to Grand Hotel. How can I help you today? Please speak after the beep."
-                }
-            }
+            # ✅ Return XML response for Passthru applet
+            resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Welcome to Grand Hotel. How can I help you today? Please speak after the beep.</Say>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
             
-            logger.info(f"Returning call answer response: {response_data}")
-            return Response(
-                content=json.dumps(response_data),
-                media_type="application/json"
-            )
+            logger.info("Returning XML greeting response for Passthru")
+            return Response(content=resp, media_type="application/xml")
         
         elif call_type == "completed" and recording_url:
             logger.info(f"Processing completed call with recording: {recording_url}")
@@ -67,101 +54,59 @@ async def exotel_webhook(request: Request):
                     reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
                     logger.info(f"Generated AI reply audio: {reply_url}")
                     
-                    # ✅ Play AI response back to caller
-                    response_data = {
-                        "fetch_after_attempt": False,
-                        "destination": {
-                            "numbers": [caller]  # Call back to deliver AI response
-                        },
-                        "start_call_playback": {
-                            "playback_to": "callee",
-                            "type": "audio_url", 
-                            "value": reply_url
-                        }
-                    }
+                    # ✅ Play AI response
+                    resp = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Play>{reply_url}</Play>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
                     
-                    return Response(
-                        content=json.dumps(response_data),
-                        media_type="application/json"
-                    )
+                    return Response(content=resp, media_type="application/xml")
                 else:
                     # ✅ Fallback text response
-                    response_data = {
-                        "fetch_after_attempt": False,
-                        "destination": {
-                            "numbers": [caller]
-                        },
-                        "start_call_playback": {
-                            "playback_to": "callee",
-                            "type": "text",
-                            "value": "Thank you for your inquiry. We will get back to you soon."
-                        }
-                    }
+                    resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for your inquiry. We will get back to you soon.</Say>
+    <Hangup/>
+</Response>"""
                     
-                    return Response(
-                        content=json.dumps(response_data),
-                        media_type="application/json"
-                    )
+                    return Response(content=resp, media_type="application/xml")
                     
             except Exception as e:
                 logger.error(f"Error processing recording: {e}")
-                # Return fallback response on error
-                response_data = {
-                    "fetch_after_attempt": False,
-                    "destination": {
-                        "numbers": [caller]
-                    },
-                    "start_call_playback": {
-                        "playback_to": "callee",
-                        "type": "text",
-                        "value": "Sorry, I didn't catch that. Could you please repeat your request?"
-                    }
-                }
+                resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Sorry, I didn't catch that. Could you please repeat your request?</Say>
+    <Record timeout="10" maxLength="30"/>
+</Response>"""
                 
-                return Response(
-                    content=json.dumps(response_data),
-                    media_type="application/json"
-                )
+                return Response(content=resp, media_type="application/xml")
         
-        # ✅ Handle other call types
+        # ✅ Handle call end
         elif call_type in ("hangup", "completed", "end"):
             logger.info(f"Call ended for caller: {caller}")
-            response_data = {
-                "fetch_after_attempt": False,
-                "destination": {
-                    "numbers": []  # No further action needed
-                }
-            }
+            resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for calling Grand Hotel. Goodbye!</Say>
+</Response>"""
             
-            return Response(
-                content=json.dumps(response_data),
-                media_type="application/json"
-            )
+            return Response(content=resp, media_type="application/xml")
         
-        # Default response for unhandled call types
+        # Default response
         logger.info(f"Handling default case for CallType: {call_type}")
-        response_data = {
-            "fetch_after_attempt": False,
-            "destination": {
-                "numbers": []
-            }
-        }
+        resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for calling Grand Hotel.</Say>
+    <Hangup/>
+</Response>"""
         
-        return Response(
-            content=json.dumps(response_data),
-            media_type="application/json"
-        )
+        return Response(content=resp, media_type="application/xml")
 
     except Exception as e:
         logger.error(f"Webhook error: {e}")
-        # ✅ Always return valid JSON even on errors
-        error_response = {
-            "fetch_after_attempt": False,
-            "destination": {
-                "numbers": []
-            }
-        }
-        return Response(
-            content=json.dumps(error_response),
-            media_type="application/json"
-        )
+        resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Sorry, a server error occurred. Please try again later.</Say>
+    <Hangup/>
+</Response>"""
+        return Response(content=resp, media_type="application/xml")
