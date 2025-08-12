@@ -34,7 +34,7 @@ async def exotel_webhook(request: Request):
         if call_type == "call-attempt":
             logger.info("Handling call-attempt with Passthru - playing greeting")
             
-            # ✅ CORRECT - Properly formatted XML response
+            # ✅ CORRECT - Properly formatted XML response for Passthru applet
             resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Welcome to Grand Hotel. How can I help you today? Please speak after the beep.</Say>
@@ -54,7 +54,7 @@ async def exotel_webhook(request: Request):
                     reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
                     logger.info(f"Generated AI reply audio: {reply_url}")
                     
-                    # ✅ CORRECT - XML with Play tag
+                    # ✅ CORRECT - XML with Play tag for AI response
                     resp = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{reply_url}</Play>
@@ -63,7 +63,7 @@ async def exotel_webhook(request: Request):
                     
                     return Response(content=resp, media_type="application/xml")
                 else:
-                    # ✅ CORRECT - XML fallback
+                    # ✅ CORRECT - XML fallback response
                     resp = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say>Thank you for your inquiry. Is there anything else I can help you with?</Say>
@@ -111,13 +111,3 @@ async def exotel_webhook(request: Request):
     <Hangup/>
 </Response>"""
         return Response(content=resp, media_type="application/xml")
-
-# Test endpoint for debugging
-@app.get("/test_webhook")
-async def test_webhook():
-    """Test endpoint to verify XML response format"""
-    resp = """<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say>Hello, this is a test message from Grand Hotel</Say>
-</Response>"""
-    return Response(content=resp, media_type="application/xml")
