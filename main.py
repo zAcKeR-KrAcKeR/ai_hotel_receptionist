@@ -32,27 +32,26 @@ async def exotel_webhook(request: Request):
 
         logger.info(f"Processing CallType: {call_type} for caller: {caller}")
 
-        # For Connect applet, return JSON response as per Exotel guide
         if call_type == "call-attempt":
-            logger.info("Handling call-attempt - setting up call connection")
+            logger.info("Handling call-attempt - providing greeting")
             
-            # According to the guide, return JSON with connect parameters
+            # ✅ Return JSON that answers the call and plays greeting
             response_data = {
                 "fetch_after_attempt": False,
                 "destination": {
-                    "numbers": ["+919513886363"]  # Your Exotel number
+                    "numbers": []  # ✅ Empty - no agents to call
                 },
                 "record": True,
-                "recording_channels": "single",
-                "max_conversation_duration": 300,  # 5 minutes
+                "recording_channels": "single", 
+                "max_conversation_duration": 300,
                 "start_call_playback": {
-                    "playback_to": "callee",
+                    "playback_to": "both",
                     "type": "text",
                     "value": "Welcome to Grand Hotel. How can I help you today? Please speak after the beep."
                 }
             }
             
-            logger.info(f"Returning JSON response: {response_data}")
+            logger.info(f"Returning greeting response: {response_data}")
             return Response(
                 content=json.dumps(response_data),
                 media_type="application/json"
@@ -61,7 +60,6 @@ async def exotel_webhook(request: Request):
         elif call_type == "completed" and recording_url:
             logger.info(f"Processing completed call with recording: {recording_url}")
             
-            # Process the recording with AI
             try:
                 reply_audio = orchestrator.process_call(recording_url, caller)
                 
@@ -69,15 +67,14 @@ async def exotel_webhook(request: Request):
                     reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
                     logger.info(f"Generated AI reply audio: {reply_url}")
                     
-                    # Return JSON to play AI response
                     response_data = {
                         "fetch_after_attempt": False,
                         "destination": {
-                            "numbers": [caller]  # Call back the user
+                            "numbers": []
                         },
-                        "start_call_playbook": {
-                            "playback_to": "callee",
-                            "type": "audio_url",
+                        "start_call_playback": {
+                            "playback_to": "both",
+                            "type": "audio_url", 
                             "value": reply_url
                         }
                     }
@@ -87,14 +84,13 @@ async def exotel_webhook(request: Request):
                         media_type="application/json"
                     )
                 else:
-                    # Fallback text response
                     response_data = {
                         "fetch_after_attempt": False,
                         "destination": {
-                            "numbers": [caller]
+                            "numbers": []
                         },
-                        "start_call_playbook": {
-                            "playback_to": "callee", 
+                        "start_call_playback": {
+                            "playback_to": "both",
                             "type": "text",
                             "value": "Thank you for your inquiry. We will get back to you soon."
                         }
@@ -108,12 +104,12 @@ async def exotel_webhook(request: Request):
             except Exception as e:
                 logger.error(f"Error processing recording: {e}")
         
-        # Default response for other call types
+        # Default response
         logger.info(f"Handling default case for CallType: {call_type}")
         response_data = {
             "fetch_after_attempt": False,
             "destination": {
-                "numbers": []  # Empty to end call
+                "numbers": []
             }
         }
         
@@ -124,7 +120,6 @@ async def exotel_webhook(request: Request):
 
     except Exception as e:
         logger.error(f"Webhook error: {e}")
-        # Return minimal valid JSON on error
         error_response = {
             "fetch_after_attempt": False,
             "destination": {
