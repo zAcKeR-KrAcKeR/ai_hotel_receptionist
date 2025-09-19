@@ -5,269 +5,234 @@ import os
 import uuid
 from orchestrator import orchestrator
 from dotenv import load_dotenv
+from datetime import datetime
 import shutil
 import tempfile
 
-# Setup
 AUDIO_DIR = "static/audio"
 os.makedirs(AUDIO_DIR, exist_ok=True)
+
 load_dotenv()
 
 logger = logging.getLogger("uvicorn.error")
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com").rstrip('/')
 
-app = FastAPI()
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://ai-hotel-receptionist.onrender.com").rstrip("/")
+
+app = FastAPI(
+    title="AI Hotel Receptionist API",
+    description="An AI-powered hotel receptionist that handles calls via Exotel and Amazon Connect",
+    version="1.0.0"
+)
+
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
-# 🔥 AMAZON CONNECT WEBHOOK - REAL-TIME INTEGRATION
-@app.api_route("/connect_webhook", methods=["GET", "POST"])
-async def connect_webhook(request: Request):
-    """Handle Amazon Connect Lambda webhook calls with real-time audio processing"""
-    try:
-        logger.info(f"Connect webhook called: {request.method}")
-        
-        # Handle different content types from Lambda/Connect
-        if request.method == "POST":
-            content_type = request.headers.get("content-type", "")
-            if "application/json" in content_type:
-                data = await request.json()
-            else:
-                form_data = await request.form()
-                data = dict(form_data)
-        else:
-            data = dict(request.query_params)
-        
-        logger.info(f"Connect webhook data: {data}")
-        
-        # Extract parameters from Connect/Lambda
-        call_type = data.get("CallType", "connect-call")
-        call_sid = data.get("CallSid", str(uuid.uuid4()))
-        caller = data.get("From", "connect-caller")
-        recording_url = data.get("RecordingUrl")
-        speech_text = data.get("SpeechText")
-        processing_type = data.get("ProcessingType", "webhook")
-        contact_id = data.get("ContactId", call_sid)
-        
-        logger.info(f"Processing Connect request - Type: {processing_type}, Caller: {caller}")
-        
-        # Real-time processing based on available data
-        if recording_url:
-            # Process audio from recording URL (Connect streaming)
-            logger.info(f"Processing Connect recording: {recording_url}")
-            reply_audio = orchestrator.process_call(recording_url, caller)
-            
-            if reply_audio and os.path.exists(reply_audio):
-                # Get both local and Azure Blob URLs
-                reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
-                
-                # Upload to Azure Blob for Amazon Connect access
-                from blob_storage import blob_storage
-                blob_url = blob_storage.upload_audio_file(reply_audio)
-                
-                logger.info(f"Connect AI reply ready - Local: {reply_url}, Blob: {blob_url}")
-                
-                return {
-                    "statusCode": 200,
-                    "body": {
-                        "message": "AI response generated successfully",
-                        "audioUrl": blob_url or reply_url,  # Prefer blob URL for Connect
-                        "localAudioUrl": reply_url,
-                        "success": True,
-                        "callId": contact_id,
-                        "processing": "recording_url",
-                        "caller": caller
-                    }
-                }
-            else:
-                logger.warning("No audio response generated from Connect recording")
-                return {
-                    "statusCode": 200,
-                    "body": {
-                        "message": "Thank you for your inquiry. Our team will get back to you shortly.",
-                        "success": False,
-                        "callId": contact_id,
-                        "processing": "failed"
-                    }
-                }
-                
-        elif speech_text:
-            # Process with speech text (Connect speech-to-text)
-            logger.info(f"Processing Connect speech text: {speech_text}")
-            
-            try:
-                # Use your existing AI pipeline with text input
-                from agents.llm_tools import llm_tool
-                from agents.autogen_agents import manager
-                from agents.tts_tool import AzureTTSTool
-                from database.queries import HotelDatabase
-                
-                # Analyze intent and generate response using your existing pipeline
-                intent_data = llm_tool.analyze_intent(speech_text)
-                chat_history = [{"role": "user", "content": speech_text}]
-                result = manager.run(chat_history)
-                
-                reply_text = result[-1]["content"] if isinstance(result, list) else str(result)
-                logger.info(f"AI text response: {reply_text}")
-                
-                # Generate TTS for the response using your existing TTS
-                tts = AzureTTSTool()
-                wav_path = tts.synthesize_speech(reply_text)
-                
-                if wav_path and os.path.exists(wav_path):
-                    output_filename = f"connect_reply_{caller}_{uuid.uuid4().hex}.wav"
-                    output_path = os.path.join(AUDIO_DIR, output_filename)
-                    os.rename(wav_path, output_path)
-                    
-                    reply_url = f"{PUBLIC_BASE_URL}/audio/{output_filename}"
-                    
-                    # Upload to Azure Blob for Connect access
-                    from blob_storage import blob_storage
-                    blob_url = blob_storage.upload_audio_file(output_path)
-                    
-                    # Log conversation using your existing DB
-                    db = HotelDatabase()
-                    db.log_conversation(caller, speech_text, reply_text)
-                    
-                    return {
-                        "statusCode": 200,
-                        "body": {
-                            "message": reply_text,
-                            "audioUrl": blob_url or reply_url,
-                            "localAudioUrl": reply_url,
-                            "success": True,
-                            "callId": contact_id,
-                            "processing": "speech_text",
-                            "caller": caller
-                        }
-                    }
-                else:
-                    logger.error("TTS generation failed for Connect speech text")
-                    return {
-                        "statusCode": 200,
-                        "body": {
-                            "message": reply_text,
-                            "success": True,
-                            "callId": contact_id,
-                            "processing": "text_only"
-                        }
-                    }
-                    
-            except Exception as e:
-                logger.error(f"Error processing Connect speech text: {e}")
-                return {
-                    "statusCode": 500,
-                    "body": {
-                        "message": "I'm sorry, I couldn't process your request properly. Could you please try again?",
-                        "error": str(e),
-                        "callId": contact_id
-                    }
-                }
-        else:
-            # No audio data available - return Connect-ready greeting
-            logger.info("Connect call initiated - returning greeting")
-            return {
-                "statusCode": 200,
-                "body": {
-                    "message": "Welcome to Grand Hotel. I'm your AI assistant. How may I help you today?",
-                    "ready": True,
-                    "callId": contact_id,
-                    "processing": "initial_greeting",
-                    "instructions": "Please provide speech text or recording URL for processing"
-                }
-            }
-        
-    except Exception as e:
-        logger.error(f"Connect webhook error: {e}", exc_info=True)
-        return {
-            "statusCode": 500,
-            "body": {
-                "message": "I'm experiencing technical difficulties. Please try again.",
-                "error": str(e)
-            }
-        }
+# Track conversation state for multiple applets
+conversation_states = {}
 
-# 🔥 AMAZON CONNECT TEST ENDPOINT
-@app.get("/connect_test")
-async def connect_test():
-    """Test endpoint for Amazon Connect integration"""
+# ========== ROOT ROUTE - FIXES 404 ERROR ==========
+@app.get("/")
+async def root():
     return {
-        "status": "ready",
-        "service": "AI Hotel Receptionist - Amazon Connect Ready",
-        "connect_integration": "active",
-        "timestamp": str(uuid.uuid4()),
+        "message": "AI Hotel Receptionist API is running!",
+        "status": "healthy",
+        "version": "1.0.0",
         "endpoints": {
-            "webhook": f"{PUBLIC_BASE_URL}/connect_webhook",
-            "audio": f"{PUBLIC_BASE_URL}/audio/",
-            "test": f"{PUBLIC_BASE_URL}/connect_test"
-        },
-        "capabilities": [
-            "Real-time speech processing",
-            "Azure Blob Storage integration", 
-            "Lambda webhook support",
-            "Hotel booking and inquiry handling"
-        ],
-        "version": "2.0-connect"
+            "health": "/health",
+            "exotel_webhook": "/exotel_webhook",
+            "amazon_connect_audio": "/amazon_connect_audio",
+            "docs": "/docs"
+        }
     }
 
-# 🔥 AMAZON CONNECT AUDIO STREAMING (Enhanced)
+# ========== HEALTH CHECK ENDPOINT ==========
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "service": "AI Hotel Receptionist",
+        "active_conversations": len(conversation_states),
+        "uptime": "running"
+    }
+
+# ========== EXOTEL WEBHOOK INTEGRATION ==========
+@app.api_route("/exotel_webhook", methods=["GET", "POST"])
+async def exotel_webhook(request: Request):
+    try:
+        data = await request.form() if request.method == "POST" else request.query_params
+        params = dict(data)
+        
+        logger.info(f"Exotel Params: {params}")
+        
+        call_type = params.get("CallType", "call-attempt")
+        call_sid = params.get("CallSid", str(uuid.uuid4()))
+        caller = params.get("From", params.get("CallFrom"))
+        recording_url = params.get("RecordingUrl")
+        
+        logger.info(f"Processing CallType: {call_type} for caller: {caller}")
+        
+        # Initialize conversation state
+        if call_sid not in conversation_states:
+            conversation_states[call_sid] = {"step": 1}
+        
+        current_step = conversation_states[call_sid]["step"]
+        
+        if call_type == "call-attempt" and current_step == 1:
+            logger.info("Step 1: Playing greeting and starting recording")
+            conversation_states[call_sid]["step"] = 2
+            
+            # ✅ CORRECT XML format for greeting + recording
+            resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Welcome to Grand Hotel. How can I help you today? Please speak after the beep.</Say>
+    <Record maxLength="30" timeout="5" />
+</Response>"""
+            
+            logger.info("Returning proper XML greeting with recording")
+            return Response(content=resp, media_type="application/xml")
+        
+        elif call_type == "completed" and recording_url:
+            logger.info(f"Processing recording: {recording_url}")
+            
+            try:
+                reply_audio = orchestrator.process_call(recording_url, caller)
+                
+                if reply_audio and os.path.exists(reply_audio):
+                    reply_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio)}"
+                    logger.info(f"AI reply ready: {reply_url}")
+                    
+                    # ✅ Play AI response and continue recording
+                    resp = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Play>{reply_url}</Play>
+    <Record maxLength="30" timeout="5" />
+</Response>"""
+                    
+                    return Response(content=resp, media_type="application/xml")
+                
+                else:
+                    # ✅ Fallback response
+                    resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for your inquiry. Is there anything else I can help you with?</Say>
+    <Record maxLength="30" timeout="5" />
+</Response>"""
+                    
+                    return Response(content=resp, media_type="application/xml")
+            
+            except Exception as e:
+                logger.error(f"Error processing recording: {e}")
+                
+                resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Sorry, I didn't catch that. Could you please repeat your request?</Say>
+    <Record maxLength="30" timeout="5" />
+</Response>"""
+                
+                return Response(content=resp, media_type="application/xml")
+        
+        elif call_type in ("hangup", "completed", "end"):
+            logger.info(f"Call ended for caller: {caller}")
+            
+            # Clean up conversation state
+            if call_sid in conversation_states:
+                del conversation_states[call_sid]
+            
+            resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Thank you for calling Grand Hotel. Goodbye!</Say>
+</Response>"""
+            
+            return Response(content=resp, media_type="application/xml")
+        
+        # Handle subsequent call-attempt calls (multiple applets)
+        elif call_type == "call-attempt" and current_step > 1:
+            logger.info(f"Subsequent call-attempt (step {current_step}) - waiting for recording")
+            
+            # ✅ Just continue recording without repeating greeting
+            resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Record maxLength="30" timeout="5" />
+</Response>"""
+            
+            return Response(content=resp, media_type="application/xml")
+        
+        # Default case
+        logger.info(f"Default case for CallType: {call_type}")
+        
+        resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>How can I assist you today?</Say>
+    <Record maxLength="30" timeout="5" />
+</Response>"""
+        
+        return Response(content=resp, media_type="application/xml")
+    
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        
+        resp = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>Sorry, there was an error. Please try again.</Say>
+</Response>"""
+        
+        return Response(content=resp, media_type="application/xml")
+
+# ========== AMAZON CONNECT INTEGRATION ==========
 @app.post("/amazon_connect_audio")
 async def amazon_connect_audio(audio: UploadFile = File(...)):
-    """Handle direct audio uploads from Amazon Connect with Blob storage"""
-    tmp_path = None
     try:
-        logger.info("Received audio stream from Amazon Connect")
+        logger.info("Received audio from Amazon Connect")
         
         # Save incoming audio chunk to temporary file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             shutil.copyfileobj(audio.file, tmp)
             tmp_path = tmp.name
-            
-        logger.info(f"Saved Connect audio to {tmp_path}")
+        
+        logger.info(f"Saved audio to: {tmp_path}")
         
         # Process audio using orchestrator
         reply_audio_path = orchestrator.process_call(f"file://{tmp_path}", "amazon_connect_caller")
         
         if reply_audio_path and os.path.exists(reply_audio_path):
-            # Get local URL
             audio_url = f"{PUBLIC_BASE_URL}/audio/{os.path.basename(reply_audio_path)}"
-            
-            # Upload to Azure Blob for Connect access
-            from blob_storage import blob_storage
-            blob_url = blob_storage.upload_audio_file(reply_audio_path)
-            
-            logger.info(f"Generated AI reply - Local: {audio_url}, Blob: {blob_url}")
-            
-            return {
-                "audio_url": blob_url or audio_url,
-                "local_audio_url": audio_url,
-                "blob_url": blob_url,
-                "success": True,
-                "processing": "direct_upload"
-            }
-        else:
-            logger.error("Failed to generate AI reply for Connect audio")
-            return {
-                "error": "AI processing failed",
-                "success": False
-            }
-            
+            logger.info(f"Generated AI reply: {audio_url}")
+            return {"audio_url": audio_url}
+        
+        logger.error("Failed to generate AI reply")
+        return {"error": "AI processing failed"}
+        
     except Exception as e:
         logger.error(f"Amazon Connect audio processing error: {e}")
-        return {
-            "error": str(e),
-            "success": False
-        }
+        return {"error": str(e)}
+    
     finally:
-        if tmp_path and os.path.exists(tmp_path):
+        # Clean up temporary file
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
-# 🔥 HEALTH CHECK FOR AMAZON CONNECT
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for Amazon Connect monitoring"""
+# ========== ADDITIONAL API INFO ENDPOINT ==========
+@app.get("/info")
+async def api_info():
     return {
-        "status": "healthy",
-        "service": "AI Hotel Receptionist",
-        "connect_ready": True,
-        "timestamp": str(uuid.uuid4())
+        "name": "AI Hotel Receptionist",
+        "description": "An AI-powered hotel receptionist system with multi-provider support",
+        "features": [
+            "Exotel webhook integration",
+            "Amazon Connect support", 
+            "Speech-to-Text processing",
+            "AI-powered responses",
+            "Text-to-Speech synthesis",
+            "Conversation state management"
+        ],
+        "supported_formats": ["WAV", "MP3"],
+        "providers": ["Exotel", "Amazon Connect"],
+        "endpoints": {
+            "/": "API welcome message",
+            "/health": "Health check with conversation stats",
+            "/exotel_webhook": "Exotel call handling webhook",
+            "/amazon_connect_audio": "Process audio from Amazon Connect",
+            "/docs": "Interactive API documentation",
+            "/info": "API information and features"
+        }
     }
