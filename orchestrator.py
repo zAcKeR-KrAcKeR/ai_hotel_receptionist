@@ -7,7 +7,7 @@ from agents.tts_tool import AzureTTSTool
 from agents.autogen_agents import manager
 from utils.audio_handler import AudioHandler
 from database.queries import HotelDatabase
-from blob_storage import blob_storage
+#from blob_storage import blob_storage
 import requests
 import tempfile
 
